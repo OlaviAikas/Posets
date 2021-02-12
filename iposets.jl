@@ -62,7 +62,9 @@ end
 function igplot(p::Iposet)
     colors = Array{ColorTypes.AbstractRGB}(undef, nv(p.poset))
     for i in 1:length(colors)
-        if i in p.s
+        if i in p.s && i in p.t
+            colors[i] = colorant"#C7C795"
+        elseif i in p.s
             colors[i] = colorant"#95C7AE"
         elseif i in p.t
             colors[i] = colorant"#C795AE"
@@ -86,7 +88,7 @@ function glue(g::Iposet, p::Iposet)
     end
     for v in vertices(p.poset)
         if v in p.s
-            pos = getindex(p.s, v)
+            pos = findfirst(x -> x == v ? true : false, p.s)
             corrtarget = g.t[pos]
             oldnew2[v] = oldnew1[corrtarget]
         else
@@ -218,6 +220,8 @@ function isIso(g::Iposet, s::Iposet)
     if length(g.s) != length(s.s) || length(g.t) != length(s.t)
         return false
     end
+    transitiveclosure!(g.poset, true)
+    transitiveclosure!(s.poset, true)
     g_nb_in_per_node = Array{Array{Int,1},1}(undef, n + 1)
     s_nb_in_per_node = Array{Array{Int,1},1}(undef, n + 1)
     g_nb_out_per_node = Array{Array{Int,1},1}(undef, n + 1)
@@ -311,6 +315,145 @@ function isIso(g::Iposet, s::Iposet)
     return false
 end
 
+"""Yet another isomorphism function, but this one is especially for Iposets.
+isomorphisms are now arrays for efficiency."""
+function isIsoIposet(g::Iposet, s::Iposet, a::Array{Int})
+    #Easy stuff first
+    if nv(g.poset) != nv(s.poset) || length(a) != nv(g.poset)
+        return false
+    end
+    for i in 1:length(a) #Confirm that "a" is an isomorphism
+        if !(i in a)
+            return false
+        end
+    end
+    # Check that the interfaces are mapped nicely
+    for i in 1:length(g.s)
+        if a[g.s[i]] != s.s[i]
+            return false
+        end
+    end
+    for i in 1:length(g.t)
+        if a[g.t[i]] != s.t[i]
+            return false
+        end
+    end
+    for vertex in 1:length(a)
+        neighbours_in_g = inneighbors(g.poset, vertex)
+        neighbours_in_s = inneighbors(s.poset, a[vertex])
+        for neighbour in neighbours_in_g
+            if !(a[neighbour] in neighbours_in_s)
+                return false
+            end
+        end
+        neighbours_out_g = outneighbors(g.poset, vertex)
+        neighbours_out_s = outneighbors(s.poset, a[vertex])
+        for neighbour in neighbours_out_g
+            if !(a[neighbour] in neighbours_out_s)
+                return false
+            end
+        end
+    end
+    return true
+end
+
+"""More optimised isomorphism predicate for Iposets"""
+function isIsoIposet(g::Iposet, s::Iposet)
+    #Start with the easy stuff
+    n = nv(g.poset)
+    if n != nv(s.poset) || ne(g.poset) != ne(s.poset)
+        return false
+    end
+    if length(g.s) != length(s.s) || length(g.t) != length(s.t)
+        return false
+    end
+    #Take the transitive closures in case they weren't good before
+    transitiveclosure!(g.poset, true)
+    transitiveclosure!(s.poset, true)
+    #Make arrays of tuples where the first number is the number in inneighbours
+    #and the second the number of outneighbours
+    g_v_profiles = Array{Tuple{Int, Int}}(undef, n)
+    s_v_profiles = Array{Tuple{Int, Int}}(undef, n)
+    for v in 1:n
+        g_v_profiles[v] = (length(inneighbors(g.poset, v)), length(outneighbors(g.poset, v)))
+        s_v_profiles[v] = (length(inneighbors(s.poset, v)), length(outneighbors(s.poset, v)))
+    end
+    # Check that the vertex profiles match in both graphs
+    used = zeros(Bool, n)
+    for i in 1:n
+        found = false
+        for j in 1:n
+            if g_v_profiles[i] == s_v_profiles[j] && !used[j]
+                found = true
+                break
+            end
+        end
+        if !found
+            return false
+        end
+    end
+    # Construct classes of vertices that can be isomorphic
+    v_classes = Array{Tuple{Array{Int}, Array{Int}}}(undef, 0)
+    indexed = Array{Bool}(undef, n)
+    for i in 1:n
+        if i in g.s || i in g.t
+            indexed[i] = true
+        else
+            indexed[i] = false
+        end
+    end
+    for i in 1:n
+        if indexed[i]
+            continue
+        end
+        class = (Array{Int}(undef, 1), Array{Int}(undef, 0))
+        class[1][1] = i
+        for v in 1:n
+            if s_v_profiles[v] == g_v_profiles[i]
+                push!(class[2], v)
+            end
+            if g_v_profiles[v] == g_v_profiles[i] && v != i
+                push!(class[1], v)
+                indexed[v] = true
+            end
+        end
+        push!(v_classes, class)
+        indexed[i] = true
+    end
+    isom_parts = Array{Array{Array{Tuple{Int, Int}}}}(undef, length(v_classes))
+    for i in 1:length(v_classes)
+        isom_parts[i] = []
+        lh = v_classes[i][1] # Nodes in g
+        rh = v_classes[i][2] # Nodes in s
+        for perm in permutations(rh)
+            push!(isom_parts[i], collect(zip(lh, perm)))
+        end
+    end
+    for perm in Iterators.product(isom_parts...)
+        pos_isom = Array{Int}(undef, n)
+        # The interfaces must map nicely so this is sure information
+        for i in 1:length(g.s)
+            pos_isom[g.s[i]] = s.s[i]
+        end
+        for i in 1:length(g.t)
+            pos_isom[g.t[i]] = s.t[i]
+        end
+        # Now we use the vertex profiles to see if we can fill in the rest of
+        # pos_isom
+        for info_array in perm
+            for mapping in info_array
+                pos_isom[mapping[1]] = mapping[2]
+            end
+        end
+        #println(perm)
+        #println(pos_isom)
+        if isIsoIposet(g, s, pos_isom)
+            return true
+        end
+    end
+    return false
+end
+
 """Compute the size of a potential gluing of g and s. Return -1 if there's a
 mismatch with the interfaces"""
 function potGlue(g::Iposet, s::Iposet)
@@ -331,7 +474,7 @@ function genGpIposets(n::Int)
     end
     for s in [(), (1,)]
         for t in [(), (1,)]
-            push!(alliposets[1], Iposet(s, t, SimpleDiGraph(1)))
+            push!(alliposets[1], Iposet(s, t, transitiveclosure(SimpleDiGraph(1), true)))
         end
     end
     if n == 1
@@ -345,28 +488,23 @@ function genGpIposets(n::Int)
         println(a)
         for n1 in 1:(numpoints-1)
             for n2 in 1:(numpoints-1)
-                ips1 = alliposets[n1]
-                ips2 = alliposets[n2]
-                for ip1 in ips1
-                    for ip2 in ips2
-                        ip = Iposet((),(),SimpleDiGraph(0))
-                        try
+                for ip1 in alliposets[n1]
+                    for ip2 in alliposets[n2]
+                        pg = potGlue(ip1, ip2)
+                        if pg == numpoints
                             ip = glue(ip1, ip2)
-                        catch GluingInterfacesDontMatchError
-                            continue
-                        end
-                        ipsize = nv(ip.poset)
-                        if ipsize <= n
                             seen = false
-                            for iq in alliposets[ipsize]
-                                if isIso(iq, ip)
+                            for iq in alliposets[numpoints]
+                                if isIsoIposet(iq, ip)
                                     seen = true
                                     break
                                 end
                             end
                             if !seen
-                                push!(alliposets[ipsize], ip)
+                                push!(alliposets[numpoints], ip)
                             end
+                        else
+                            continue
                         end
                     end
                 end
@@ -381,7 +519,7 @@ function genGpIposets(n::Int)
                     ip = parallel(ip1, ip2)
                     seen = false
                     for iq in alliposets[numpoints]
-                        if isIso(iq, ip)
+                        if isIsoIposet(iq, ip)
                             seen = true
                             break
                         end
@@ -462,58 +600,6 @@ function genGpIposetsNoMemo(n::Int)
         end
     end
     return alliposets
-end
-
-"""Different style of generating gp-iposets, in case this works. Takes an array
-of Iposets, and an integer n, then returns the gp closure of that array with
-all graphs up to n nodes, up to iso"""
-function gpClosure(a::Array{Iposet}, n::Int)
-    old_length::Int  = length(a)
-    new_length::Int = 0
-    while old_length != new_length
-        println(old_length)
-        println(new_length)
-        for ip1 in a
-            for ip2 in a
-                gluing = Iposet((), (), SimpleDiGraph(0))
-                glued::Bool = false
-                try
-                    gluing = glue(ip1, ip2)
-                    glued = true
-                catch GluingInterfacesDontMatchError
-                    glued = false
-                end
-                if glued && nv(gluing.poset) <= n
-                    seen::Bool = false
-                    for iposet in a
-                        if isIso(iposet, gluing)
-                            seen = true
-                            break
-                        end
-                    end
-                    if !seen
-                        push!(a, gluing)
-                    end
-                end
-                if nv(ip1.poset) + nv(ip2.poset) <= n
-                    pcomp = parallel(ip1, ip2)
-                    seen = false
-                    for iposet in a
-                        if isIso(iposet, pcomp)
-                            seen = true
-                            break
-                        end
-                    end
-                    if !seen
-                        push!(a, pcomp)
-                    end
-                end
-            end
-        end
-        old_length = new_length
-        new_length = length(a)
-    end
-    return a
 end
 
 """From an array of Iposets, get the different posets associated to them,
