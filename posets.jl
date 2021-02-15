@@ -4,8 +4,7 @@ using LightGraphs
 using Printf
 using Combinatorics
 
-"""Check if the graph g is antisymmetric. Assumes that it is already acyclic.
-Returns true or false"""
+"""Check if the graph g is antisymmetric, assuming that it is already acyclic."""
 function isAntiSymmetric(g::SimpleDiGraph)
     for e in edges(g)
         if e != reverse(e) && has_edge(g, reverse(e))
@@ -17,7 +16,8 @@ end
 
 """Produce a new SimpleDiGraph object, that represents the hasse diagram of g.
 This is the minimal graph gh such that transitiveclosure!(gh) = g. Used to draw
-nicer diagrams"""
+nicer diagrams -- Attention! This is buggy and will be soon reworked
+with the help of the minFiltration function"""
 function hasseDiagram(g::SimpleDiGraph)
     for i in 1:nv(g)
         rem_edge!(g, i, i)
@@ -35,28 +35,29 @@ function hasseDiagram(g::SimpleDiGraph)
     return s
 end
 
-"""Check if the mapping d::Dict is an isomorphism from g to s"""
-function isIso(g::SimpleDiGraph, s::SimpleDiGraph, d::Dict{Int, Int})
-    for i in 1:(length(nv(g))) #Check that the values make a permutation of the nodes (bijection)
-        if !(i in values(d)) || !(i in keys(d))
+"""Check if the array a is an isomorphism for the graphs g and s"""
+function isIso(g::SimpleDiGraph, s::SimpleDiGraph, a::Array{Int})
+    #Easy stuff first
+    if nv(g) != nv(s) || length(a) != nv(g)
+        return false
+    end
+    for i in 1:length(a) #Confirm that "a" is an isomorphism
+        if !(i in a)
             return false
         end
     end
-    if nv(g) != length(keys(d))
-        return false
-    end
-    for vertex in keys(d)
+    for vertex in 1:length(a)
         neighbours_in_g = inneighbors(g, vertex)
-        neighbours_in_s = inneighbors(s, d[vertex])
+        neighbours_in_s = inneighbors(s, a[vertex])
         for neighbour in neighbours_in_g
-            if !(d[neighbour] in neighbours_in_s)
+            if !(a[neighbour] in neighbours_in_s)
                 return false
             end
         end
         neighbours_out_g = outneighbors(g, vertex)
-        neighbours_out_s = outneighbors(s, d[vertex])
+        neighbours_out_s = outneighbors(s, a[vertex])
         for neighbour in neighbours_out_g
-            if !(d[neighbour] in neighbours_out_s)
+            if !(a[neighbour] in neighbours_out_s)
                 return false
             end
         end
@@ -64,123 +65,84 @@ function isIso(g::SimpleDiGraph, s::SimpleDiGraph, d::Dict{Int, Int})
     return true
 end
 
-"""Check if graphs g and s are isomorphic to each other. Returns a boolean"""
+"""Check if the graphs g and s are isomorphic to each other"""
 function isIso(g::SimpleDiGraph, s::SimpleDiGraph)
     #Start with the easy stuff
     n = nv(g)
     if n != nv(s) || ne(g) != ne(s)
         return false
     end
-    for permutation in collect(permutations(1:n))
-        pos_isom = Dict(zip(1:n, permutation))
-        if isIso(g, s, pos_isom)
-            return true
-        end
+    #Take the transitive closures in case they weren't good before
+    #transitiveclosure!(g, true)
+    #transitiveclosure!(s, true)
+    #Make arrays of "graph invariants" e.g integer tuples that describe the nodes
+    g_v_profiles = Array{Tuple{Int, Int}}(undef, n)
+    s_v_profiles = Array{Tuple{Int, Int}}(undef, n)
+    for v in 1:n
+        g_v_profiles[v] = (length(inneighbors(g, v)), length(outneighbors(g, v)))
+        s_v_profiles[v] = (length(inneighbors(s, v)), length(outneighbors(s, v)))
     end
-    return false
-end
-
-"""Better verion of isIso which uses a more complicated, but more efficient
-method to iterate over possible isomorphism."""
-function isIsoV2(g::SimpleDiGraph, s::SimpleDiGraph)
-    #Start with the easy stuff
-    n = nv(g)
-    if n != nv(s) || ne(g) != ne(s)
-        return false
-    end
-    g_nb_in_per_node = Array{Array{Int,1},1}(undef, n + 1)
-    s_nb_in_per_node = Array{Array{Int,1},1}(undef, n + 1)
-    g_nb_out_per_node = Array{Array{Int,1},1}(undef, n + 1)
-    s_nb_out_per_node = Array{Array{Int,1},1}(undef, n + 1)
-    for i in 1:n #Construct arrays where the ith index is an array of all the
-                 #nodes that have i in/out neighbours in g and s
-                 #Reserve index 1 for 0 neighbours and push everything else to
-                 #the right
-        gnib = length(inneighbors(g, i))
-        if isassigned(g_nb_in_per_node, gnib + 1)
-            push!(g_nb_in_per_node[gnib + 1], i)
-        else 
-            g_nb_in_per_node[gnib + 1] = [i]
-        end
-        snib = length(inneighbors(s, i))
-        if isassigned(s_nb_in_per_node, snib + 1)
-            push!(s_nb_in_per_node[snib + 1], i)
-        else 
-            s_nb_in_per_node[snib + 1] = [i]
-        end
-        gnob = length(outneighbors(g, i))
-        if isassigned(g_nb_out_per_node, gnob + 1)
-            push!(g_nb_out_per_node[gnob + 1], i)
-        else 
-            g_nb_out_per_node[gnob + 1] = [i]
-        end
-        snob = length(outneighbors(s, i))
-        if isassigned(s_nb_out_per_node, snob + 1)
-            push!(s_nb_out_per_node[snob + 1], i)
-        else 
-            s_nb_out_per_node[snob + 1] = [i]
-        end
-    end
-    for i in 1:(n+1)
-        if isassigned(g_nb_in_per_node, i) && isassigned(s_nb_in_per_node, i)
-            if length(g_nb_in_per_node[i]) != length(s_nb_in_per_node[i])
-                return false
+    # Check that the vertex profiles match in both graphs
+    used = zeros(Bool, n)
+    for i in 1:n
+        found = false
+        for j in 1:n
+            if g_v_profiles[i] == s_v_profiles[j] && !used[j]
+                found = true
+                break
             end
-        elseif !isassigned(g_nb_in_per_node, i) && !isassigned(s_nb_in_per_node, i)
-            #Do nothing
-        else
+        end
+        if !found
             return false
         end
-        if isassigned(g_nb_out_per_node, i) && isassigned(s_nb_out_per_node, i)
-            if length(g_nb_out_per_node[i]) == length(s_nb_out_per_node[i])
-                continue
-            else
-                return false
-            end
-        elseif !isassigned(g_nb_out_per_node, i) && !isassigned(s_nb_out_per_node, i)
+    end
+    # Construct classes of vertices that can be isomorphic
+    v_classes = Array{Tuple{Array{Int}, Array{Int}}}(undef, 0)
+    indexed = zeros(Bool, n)
+    for i in 1:n
+        if indexed[i]
             continue
-        else
-            return false
+        end
+        class = (Array{Int}(undef, 1), Array{Int}(undef, 0))
+        class[1][1] = i
+        for v in 1:n
+            if s_v_profiles[v] == g_v_profiles[i]
+                push!(class[2], v)
+            end
+            if g_v_profiles[v] == g_v_profiles[i] && v != i
+                push!(class[1], v)
+                indexed[v] = true
+            end
+        end
+        push!(v_classes, class)
+        indexed[i] = true
+    end
+    isom_parts = Array{Array{Array{Tuple{Int, Int}}}}(undef, length(v_classes))
+    for i in 1:length(v_classes)
+        isom_parts[i] = []
+        lh = v_classes[i][1] # Nodes in g
+        rh = v_classes[i][2] # Nodes in s
+        for perm in permutations(rh)
+            push!(isom_parts[i], collect(zip(lh, perm)))
         end
     end
-    in_isom_parts = Array{Array{Dict{Int, Int},1},1}(undef, n + 1)
-    out_isom_parts = Array{Array{Dict{Int, Int},1},1}(undef, n + 1)
-    for i in 1:(n+1)
-        if isassigned(g_nb_in_per_node, i)
-            for permutation in collect(permutations(s_nb_in_per_node[i]))
-                if isassigned(in_isom_parts, i)
-                    push!(in_isom_parts[i], Dict(zip(g_nb_in_per_node[i], permutation)))
-                else
-                    in_isom_parts[i] = [Dict(zip(g_nb_in_per_node[i], permutation))]
-                end
+    for perm in Iterators.product(isom_parts...)
+        pos_isom = Array{Int}(undef, n)
+        # Now we use the vertex profiles to see if we can fill in pos_isom
+        #println(perm)
+        for info_array in perm
+            for mapping in info_array
+                pos_isom[mapping[1]] = mapping[2]
             end
-        else
-            in_isom_parts[i] = [Dict()]
         end
-        if isassigned(g_nb_out_per_node, i)
-            for permutation in collect(permutations(s_nb_out_per_node[i]))
-                if isassigned(out_isom_parts, i)
-                    push!(out_isom_parts[i], Dict(zip(g_nb_out_per_node[i], permutation)))
-                else
-                    out_isom_parts[i] = [Dict(zip(g_nb_out_per_node[i], permutation))]
-                end
-            end
-        else
-            out_isom_parts[i] = [Dict()]
-        end
-    end
-    for permutation in Iterators.product(in_isom_parts..., out_isom_parts...)
-        pos_isom = Dict{Int, Int}()
-        for isom_part in permutation
-            pos_isom = merge(pos_isom, isom_part)
-        end
+        #println(perm)
+        #println(pos_isom)
         if isIso(g, s, pos_isom)
             return true
         end
     end
     return false
 end
-
 
 """Generate all of the posets of size n, return them as a set"""
 function genPosets(n::Int)
@@ -219,7 +181,7 @@ function genPosets(n::Int)
             if isAntiSymmetric(g)
                 is_iso = false
                 for s in representatives
-                    if isIsoV2(g, s)
+                    if isIso(g, s)
                         is_iso = true
                         break
                     end
@@ -256,11 +218,32 @@ function savePosets(a::Array{SimpleDiGraph}, dir::String)
     end
 end
 
-"""Find minimal nodes in an iposet"""
+"""From a directory of posets on disk, return them all in an array of
+SimpleDiGraphs"""
+function loadPosets(dir::String)
+    res = Array{SimpleDiGraph}(undef, 0)
+    counter = 1
+    still_files = true
+    while still_files
+        try
+            push!(res, loadgraph(dir * "/poset" * string(counter) * ".lgz"))
+            counter += 1
+        catch SystemError
+            still_files = false
+        end
+    end
+    if length(res) == 0
+        println("No graphs loaded, make sure you typed the directory right")
+    end
+    return res
+end
+
+"""Find minimal nodes in a poset"""
 function minNodes(p::SimpleDiGraph)
     res = []
     for v in vertices(p)
-        if length(inneighbors(p, v)) <= 1
+        n = inneighbors(p, v)
+        if length(n) == 0 || n == [v]
             push!(res, v)
         end
     end
@@ -271,7 +254,8 @@ end
 function maxNodes(p::SimpleDiGraph)
     res = []
     for v in vertices(p)
-        if length(outneighbors(p, v)) <= 1
+        n = outneighbors(p, v)
+        if length(n) == 0 || n == [v]
             push!(res, v)
         end
     end
@@ -341,7 +325,7 @@ function maxFiltration(g::SimpleDiGraph)
 end
 
 """Compute an "in-hash" of a vertex in a graph g, which is basically a hashing
-on the in edges of the vertex and its neighbouring vertices, that can be used
+on the in-edges of the vertex and its neighbouring vertices, that can be used
 as an isomorphism invariant"""
 function inHash(g::SimpleDiGraph, v::Int)
     res = 0
@@ -358,4 +342,17 @@ function outHash(g::SimpleDiGraph, v::Int)
         res += length(outneighbors(g, n))
     end
     return res*length(outneighbors(g, v))
+end
+
+"""Check if some desired graph s is a subgraph (or isomorphic to some subgraph)
+of the graph g"""
+function hasSubgraph(g::SimpleDiGraph, s::SimpleDiGraph)
+    subnodes = combinations(1:nv(g), nv(s))
+    for nodes in subnodes
+        subgraph = induced_subgraph(g, nodes)[1]
+        if isIso(subgraph, s)
+            return true
+        end
+    end
+    return false
 end

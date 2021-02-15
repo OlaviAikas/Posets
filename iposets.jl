@@ -35,30 +35,17 @@ struct Iposet
     Iposet(s, t, p) = is_min(p, s) && is_max(p, t) ? new(s, t, p) : error("Interfaces not minimal/maximal")
 end
 
-"""This is copy-paste from posets.jl so I don't have to import all the functions"""
-function hasseDiagram(g::SimpleDiGraph)
-    for i in 1:nv(g)
-        rem_edge!(g, i, i)
-    end
-    s::SimpleDiGraph = g
-    for v in vertices(g)
-        for u in outneighbors(g, v)
-            for w in outneighbors(g, v)
-                if u != w && has_path(g, u, w)
-                    rem_edge!(s, v, w)
-                end
-            end
-        end
-    end
-    return s
-end
-
 """Hasse diagram of an Iposet"""
 function iHasse(g::Iposet)
-    return Iposet(g.s, g.t, hasseDiagram(hasseDiagram(g.poset)))
+    return Iposet(g.s, g.t, hasseDiagram(g.poset))
 end
 
-"""Get the gplot object for an Iposet with the interfaces coloured"""
+"""Get the gplot object for an Iposet with the interfaces coloured
+The key is:
+green - node in source
+red - node in target
+yellow - node in both source and target
+blue - normal node (not in source or target)"""
 function igplot(p::Iposet)
     colors = Array{ColorTypes.AbstractRGB}(undef, nv(p.poset))
     for i in 1:length(colors)
@@ -150,173 +137,7 @@ function parallel(g::Iposet, s::Iposet)
     return Iposet(Tuple(ns), Tuple(nt), rposet)
 end
 
-"""Check if graphs g and s are isomorphic to each other by checking every
-permutation"""
-function isIsoPerm(g::Iposet, s::Iposet)
-    #Start with the easy stuff
-    n = nv(g.poset)
-    if n != nv(s.poset) || ne(g.poset) != ne(s.poset)
-        return false
-    end
-    if length(g.s) != length(s.s) || length(g.t) != length(s.t)
-        return false
-    end
-    for permutation in collect(permutations(1:n))
-        pos_isom = Dict(zip(1:n, permutation))
-        if isIso(g, s, pos_isom)
-            return true
-        end
-    end
-    return false
-end
-
-"""Check if the mapping d::Dict is an isomorphism from g to s"""
-function isIso(g::Iposet, s::Iposet, d::Dict{Int, Int})
-    for i in 1:(length(nv(g.poset))) #Check that the values make a permutation of the nodes (bijection)
-        if !(i in values(d)) || !(i in keys(d))
-            return false
-        end
-    end
-    if nv(g.poset) != length(keys(d))
-        return false
-    end
-    # Check that the interfaces are mapped nicely
-    for i in 1:length(g.s)
-        if d[g.s[i]] != s.s[i]
-            return false
-        end
-    end
-    for i in 1:length(g.t)
-        if d[g.t[i]] != s.t[i]
-            return false
-        end
-    end
-    for vertex in keys(d)
-        neighbours_in_g = inneighbors(g.poset, vertex)
-        neighbours_in_s = inneighbors(s.poset, d[vertex])
-        for neighbour in neighbours_in_g
-            if !(d[neighbour] in neighbours_in_s)
-                return false
-            end
-        end
-        neighbours_out_g = outneighbors(g.poset, vertex)
-        neighbours_out_s = outneighbors(s.poset, d[vertex])
-        for neighbour in neighbours_out_g
-            if !(d[neighbour] in neighbours_out_s)
-                return false
-            end
-        end
-    end
-    return true
-end
-
-"""Check if an isomorphism exists between g and s"""
-function isIso(g::Iposet, s::Iposet)
-    #Start with the easy stuff
-    n = nv(g.poset)
-    if n != nv(s.poset) || ne(g.poset) != ne(s.poset)
-        return false
-    end
-    if length(g.s) != length(s.s) || length(g.t) != length(s.t)
-        return false
-    end
-    transitiveclosure!(g.poset, true)
-    transitiveclosure!(s.poset, true)
-    g_nb_in_per_node = Array{Array{Int,1},1}(undef, n + 1)
-    s_nb_in_per_node = Array{Array{Int,1},1}(undef, n + 1)
-    g_nb_out_per_node = Array{Array{Int,1},1}(undef, n + 1)
-    s_nb_out_per_node = Array{Array{Int,1},1}(undef, n + 1)
-    for i in 1:n #Construct arrays where the ith index is an array of all the
-                 #nodes that have i in/out neighbours in g and s
-                 #Reserve index 1 for 0 neighbours and push everything else to
-                 #the right
-        gnib = length(inneighbors(g.poset, i))
-        if isassigned(g_nb_in_per_node, gnib + 1)
-            push!(g_nb_in_per_node[gnib + 1], i)
-        else 
-            g_nb_in_per_node[gnib + 1] = [i]
-        end
-        snib = length(inneighbors(s.poset, i))
-        if isassigned(s_nb_in_per_node, snib + 1)
-            push!(s_nb_in_per_node[snib + 1], i)
-        else 
-            s_nb_in_per_node[snib + 1] = [i]
-        end
-        gnob = length(outneighbors(g.poset, i))
-        if isassigned(g_nb_out_per_node, gnob + 1)
-            push!(g_nb_out_per_node[gnob + 1], i)
-        else 
-            g_nb_out_per_node[gnob + 1] = [i]
-        end
-        snob = length(outneighbors(s.poset, i))
-        if isassigned(s_nb_out_per_node, snob + 1)
-            push!(s_nb_out_per_node[snob + 1], i)
-        else 
-            s_nb_out_per_node[snob + 1] = [i]
-        end
-    end
-    for i in 1:(n+1)
-        if isassigned(g_nb_in_per_node, i) && isassigned(s_nb_in_per_node, i)
-            if length(g_nb_in_per_node[i]) != length(s_nb_in_per_node[i])
-                return false
-            end
-        elseif !isassigned(g_nb_in_per_node, i) && !isassigned(s_nb_in_per_node, i)
-            #Do nothing
-        else
-            return false
-        end
-        if isassigned(g_nb_out_per_node, i) && isassigned(s_nb_out_per_node, i)
-            if length(g_nb_out_per_node[i]) == length(s_nb_out_per_node[i])
-                continue
-            else
-                return false
-            end
-        elseif !isassigned(g_nb_out_per_node, i) && !isassigned(s_nb_out_per_node, i)
-            continue
-        else
-            return false
-        end
-    end
-    in_isom_parts = Array{Array{Dict{Int, Int},1},1}(undef, n + 1)
-    out_isom_parts = Array{Array{Dict{Int, Int},1},1}(undef, n + 1)
-    for i in 1:(n+1)
-        if isassigned(g_nb_in_per_node, i)
-            for permutation in collect(permutations(s_nb_in_per_node[i]))
-                if isassigned(in_isom_parts, i)
-                    push!(in_isom_parts[i], Dict(zip(g_nb_in_per_node[i], permutation)))
-                else
-                    in_isom_parts[i] = [Dict(zip(g_nb_in_per_node[i], permutation))]
-                end
-            end
-        else
-            in_isom_parts[i] = [Dict()]
-        end
-        if isassigned(g_nb_out_per_node, i)
-            for permutation in collect(permutations(s_nb_out_per_node[i]))
-                if isassigned(out_isom_parts, i)
-                    push!(out_isom_parts[i], Dict(zip(g_nb_out_per_node[i], permutation)))
-                else
-                    out_isom_parts[i] = [Dict(zip(g_nb_out_per_node[i], permutation))]
-                end
-            end
-        else
-            out_isom_parts[i] = [Dict()]
-        end
-    end
-    for permutation in Iterators.product(in_isom_parts..., out_isom_parts...)
-        pos_isom = Dict{Int, Int}()
-        for isom_part in permutation
-            pos_isom = merge(pos_isom, isom_part)
-        end
-        if isIso(g, s, pos_isom)
-            return true
-        end
-    end
-    return false
-end
-
-"""Yet another isomorphism function, but this one is especially for Iposets.
-isomorphisms are now arrays for efficiency."""
+"""Check if the array a is an isomorphism for the iposets g and s"""
 function isIsoIposet(g::Iposet, s::Iposet, a::Array{Int})
     #Easy stuff first
     if nv(g.poset) != nv(s.poset) || length(a) != nv(g.poset)
@@ -357,19 +178,16 @@ function isIsoIposet(g::Iposet, s::Iposet, a::Array{Int})
     return true
 end
 
-"""More optimised isomorphism predicate for Iposets"""
+"""Check if the iposets g and s are isomorphic to each other"""
 function isIsoIposet(g::Iposet, s::Iposet)
     #Start with the easy stuff
     n = nv(g.poset)
-    if n != nv(s.poset) # || ne(g.poset) != ne(s.poset)
+    if n != nv(s.poset) || ne(g.poset) != ne(s.poset)
         return false
     end
     if length(g.s) != length(s.s) || length(g.t) != length(s.t)
         return false
     end
-    #Take the transitive closures in case they weren't good before
-    #transitiveclosure!(g.poset, true)
-    #transitiveclosure!(s.poset, true)
     #Make arrays of "graph invariants" e.g integer tuples that describe the nodes
     g_v_profiles = Array{Tuple{Int, Int}}(undef, n)
     s_v_profiles = Array{Tuple{Int, Int}}(undef, n)
@@ -393,11 +211,14 @@ function isIsoIposet(g::Iposet, s::Iposet)
     end
     # Construct classes of vertices that can be isomorphic
     v_classes = Array{Tuple{Array{Int}, Array{Int}}}(undef, 0)
+    # Each class is a tuple with 2 arrays such that the nodes in the first array
+    # are vertices in g that can potentially be mapped to those vertices of s in
+    # the other array
     indexed = Array{Bool}(undef, n)
     for i in 1:n
         if i in g.s || i in g.t
-            indexed[i] = true
-        else
+            indexed[i] = true # We already know where the interfaces are mapped
+        else                  # to, so they don't need to be put in classes
             indexed[i] = false
         end
     end
@@ -406,7 +227,8 @@ function isIsoIposet(g::Iposet, s::Iposet)
             continue
         end
         class = (Array{Int}(undef, 1), Array{Int}(undef, 0))
-        class[1][1] = i
+        class[1][1] = i # Construct a new class with all of the nodes with the
+                        # same invariant as "i"
         for v in 1:n
             if s_v_profiles[v] == g_v_profiles[i]
                 push!(class[2], v)
@@ -420,6 +242,7 @@ function isIsoIposet(g::Iposet, s::Iposet)
         indexed[i] = true
     end
     isom_parts = Array{Array{Array{Tuple{Int, Int}}}}(undef, length(v_classes))
+    # Here we construct all the possible mappings of the nodes in each v-class
     for i in 1:length(v_classes)
         isom_parts[i] = []
         lh = v_classes[i][1] # Nodes in g
@@ -428,6 +251,8 @@ function isIsoIposet(g::Iposet, s::Iposet)
             push!(isom_parts[i], collect(zip(lh, perm)))
         end
     end
+    # Now we look at select permutations of all the nodes by taking the cartessian
+    # product of those mappings of the v-classes we just constructed 
     for perm in Iterators.product(isom_parts...)
         pos_isom = Array{Int}(undef, n)
         # The interfaces must map nicely so this is sure information
@@ -439,7 +264,6 @@ function isIsoIposet(g::Iposet, s::Iposet)
         end
         # Now we use the vertex profiles to see if we can fill in the rest of
         # pos_isom
-        #println(perm)
         for info_array in perm
             for mapping in info_array
                 pos_isom[mapping[1]] = mapping[2]
@@ -461,17 +285,6 @@ function potGlue(g::Iposet, s::Iposet)
         return -1
     end
     return nv(g.poset) + nv(s.poset) - length(g.t)
-end
-
-"""Check that a graph labeling is ordered, i.e any edge connects a smaller
-number to a bigger one"""
-function isOrdered(g::SimpleDiGraph)
-    for edge in edges(g)
-        if dst(edge) > src(edge)
-            return false
-        end
-    end
-    return true
 end
 
 """Generate all iposets with n points, up to isomorphism"""
@@ -545,74 +358,6 @@ function genGpIposets(n::Int)
     return alliposets[n]
 end
 
-"""Generate all gp-iposets without memoization, debugging purposes only"""
-function genGpIposetsNoMemo(n::Int)
-    # Base cases
-    if n == 0
-        return Iposet((),(),SimpleDiGraph(0))
-    end
-    if n == 1
-        alliposets = Array{Iposet}(undef, 0)
-        for s in [(), (1,)]
-            for t in [(), (1,)]
-                push!(alliposets, Iposet(s, t, SimpleDiGraph(1)))
-            end
-        end
-        return alliposets
-    end
-    # Inductive cases
-    alliposets = Array{Iposet}(undef, 0)
-    for n1 in 1:(n-1)
-        for n2 in 1:(n-1)
-            ips1 = genGpIposetsNoMemo(n1)
-            ips2 = genGpIposetsNoMemo(n2)
-            for ip1 in ips1
-                for ip2 in ips2
-                    ip = Iposet((),(),SimpleDiGraph(0))
-                    try
-                        ip = glue(ip1, ip2)
-                    catch GluingInterfacesDontMatchError
-                        continue
-                    end
-                    if nv(ip.poset) == n
-                        seen = false
-                        for iq in alliposets
-                            if isIso(ip, iq)
-                                seen = true
-                                break
-                            end
-                        end
-                        if !seen
-                            push!(alliposets, ip)
-                        end
-                    end
-                end
-            end
-        end
-    end
-    for n1 in 1:(n-1)
-        n2 = n - n1
-        ips1 = genGpIposetsNoMemo(n1)
-        ips2 = genGpIposetsNoMemo(n2)
-        for ip1 in ips1
-            for ip2 in ips2
-                ip = parallel(ip1, ip2)
-                seen = false
-                for iq in alliposets
-                    if isIso(ip, iq)
-                        seen = true
-                        break
-                    end
-                end
-                if !seen
-                    push!(alliposets, ip)
-                end
-            end
-        end
-    end
-    return alliposets
-end
-
 """From an array of Iposets, get the different posets associated to them,
 up to isomorphism"""
 function removeInterfaces(a::Array{Iposet})
@@ -663,7 +408,7 @@ function genAllIposets(n::Int)
         @printf("Checking iposet %d/%d\n", i, ipl)
         seen = false
         for iq in representatives
-            if isIso(iposets[i], iq)
+            if isIsoIposet(iposets[i], iq)
                 seen = true
                 break
             end
