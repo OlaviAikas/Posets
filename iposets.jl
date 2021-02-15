@@ -361,17 +361,16 @@ end
 function isIsoIposet(g::Iposet, s::Iposet)
     #Start with the easy stuff
     n = nv(g.poset)
-    if n != nv(s.poset) || ne(g.poset) != ne(s.poset)
+    if n != nv(s.poset) # || ne(g.poset) != ne(s.poset)
         return false
     end
     if length(g.s) != length(s.s) || length(g.t) != length(s.t)
         return false
     end
     #Take the transitive closures in case they weren't good before
-    transitiveclosure!(g.poset, true)
-    transitiveclosure!(s.poset, true)
-    #Make arrays of tuples where the first number is the number in inneighbours
-    #and the second the number of outneighbours
+    #transitiveclosure!(g.poset, true)
+    #transitiveclosure!(s.poset, true)
+    #Make arrays of "graph invariants" e.g integer tuples that describe the nodes
     g_v_profiles = Array{Tuple{Int, Int}}(undef, n)
     s_v_profiles = Array{Tuple{Int, Int}}(undef, n)
     for v in 1:n
@@ -440,6 +439,7 @@ function isIsoIposet(g::Iposet, s::Iposet)
         end
         # Now we use the vertex profiles to see if we can fill in the rest of
         # pos_isom
+        #println(perm)
         for info_array in perm
             for mapping in info_array
                 pos_isom[mapping[1]] = mapping[2]
@@ -461,6 +461,17 @@ function potGlue(g::Iposet, s::Iposet)
         return -1
     end
     return nv(g.poset) + nv(s.poset) - length(g.t)
+end
+
+"""Check that a graph labeling is ordered, i.e any edge connects a smaller
+number to a bigger one"""
+function isOrdered(g::SimpleDiGraph)
+    for edge in edges(g)
+        if dst(edge) > src(edge)
+            return false
+        end
+    end
+    return true
 end
 
 """Generate all iposets with n points, up to isomorphism"""

@@ -1,13 +1,14 @@
 include("posets.jl")
 include("iposets.jl")
+using StatProfilerHTML
 
 #ps = genPosets(6)
 #savePosets(ps, "posets/6nodes")
 
 #g = SimpleDiGraph(4)
-#add_edge!(g, 2, 3)
+#add_edge!(g, 1, 2)
+#add_edge!(g, 1, 3)
 #add_edge!(g, 3, 4)
-#add_edge!(g, 4, 1)
 #p = Iposet((2,), (1,), g)
 #
 #s = SimpleDiGraph(4)
@@ -16,13 +17,17 @@ include("iposets.jl")
 #add_edge!(s, 3, 4)
 #q = Iposet((1,), (4,), s)
 
+#println(minFiltration(g))
+#println(maxFiltration(g))
+
 #draw(PNG("/tmp/Iposet1.png", 16cm, 16cm), igplot(p))
 #draw(PNG("/tmp/Iposet2.png", 16cm, 16cm), igplot(q))
 #draw(PNG("/tmp/Iposet3.png", 16cm, 16cm), igplot(parallel(p, q)))
 
 #isIsoIposet(p, q) ? println(true) : println(false)
-@time(println(length(removeInterfaces(genGpIposets(6)))))
-
+genGpIposets(3)
+#@profilehtml genGpIposets(5)
+@time(genGpIposets(5))
 #74 gp iposets to check
 #uli_posets = Array{Iposet}(undef, 74)
 #

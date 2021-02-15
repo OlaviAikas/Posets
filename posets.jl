@@ -277,3 +277,85 @@ function maxNodes(p::SimpleDiGraph)
     end
     return res
 end
+
+"""Compute the minimum filtration (e.g starting from minimal elements) of a
+poset. Returns an array where each index corresponding to a node in the graph
+is the label in the filtration"""
+function minFiltration(g::SimpleDiGraph)
+    transitiveclosure!(g, true)
+    res = -1*ones(Int, nv(g))
+    deleted = zeros(Bool, nv(g))
+    level = 0
+    while -1 in res
+        just_deleted = zeros(Bool, nv(g))
+        for v in vertices(g)
+            if deleted[v]
+                continue
+            end
+            minimal = true
+            for neighbour in inneighbors(g, v)
+                if neighbour != v && (!deleted[neighbour] || just_deleted[neighbour])
+                    minimal = false
+                end
+            end
+            if minimal
+                res[v] = level
+                deleted[v] = true
+                just_deleted[v] = true
+            end
+        end
+        level += 1
+    end
+    return res
+end
+
+"""Compute the maximum filtration (e.g starting from maximal elements) of a
+poset. Returns an array where each index corresponding to a node in the graph
+is the label in the filtration"""
+function maxFiltration(g::SimpleDiGraph)
+    transitiveclosure!(g, true)
+    res = -1*ones(Int, nv(g))
+    deleted = zeros(Bool, nv(g))
+    level = 0
+    while -1 in res
+        just_deleted = zeros(Bool, nv(g))
+        for v in vertices(g)
+            if deleted[v]
+                continue
+            end
+            maximal = true
+            for neighbour in outneighbors(g, v)
+                if neighbour != v && (!deleted[neighbour] || just_deleted[neighbour])
+                    maximal = false
+                end
+            end
+            if maximal
+                res[v] = level
+                deleted[v] = true
+                just_deleted[v] = true
+            end
+        end
+        level += 1
+    end
+    return res
+end
+
+"""Compute an "in-hash" of a vertex in a graph g, which is basically a hashing
+on the in edges of the vertex and its neighbouring vertices, that can be used
+as an isomorphism invariant"""
+function inHash(g::SimpleDiGraph, v::Int)
+    res = 0
+    for n in inneighbors(g, v)
+        res += length(inneighbors(g, n))
+    end
+    return res*length(inneighbors(g, v))
+end
+
+"""Same as inHash but for outgoing endges"""
+function outHash(g::SimpleDiGraph, v::Int)
+    res = 0
+    for n in outneighbors(g, v)
+        res += length(outneighbors(g, n))
+    end
+    return res*length(outneighbors(g, v))
+end
