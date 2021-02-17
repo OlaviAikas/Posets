@@ -8,9 +8,15 @@ println(length(gpposets7))
 
 exclusion = Array{SimpleDiGraph}(undef, 0)
 for g in posets7
+    transitiveclosure!(g, true)
+end
+for g in gpposets7
+    transitiveclosure!(g, true)
+end
+for g in posets7
     seen = false
     for s in gpposets7
-        if isIsoV3(transitiveclosure(g, true), transitiveclosure(s, true))
+        if isIso(g, s)
             seen = true
             break
         end
@@ -19,7 +25,7 @@ for g in posets7
         push!(exclusion, g)
     end
 end
-println(length(exclusion))
+savePosets(exclusion, "NonGp7nodes")
 
 graph_nn = SimpleDiGraph(6)
 graph_m = SimpleDiGraph(6)
@@ -57,24 +63,24 @@ add_edge!(graph_ln, 3, 5)
 add_edge!(graph_ln, 2, 4)
 add_edge!(graph_ln, 4, 6)
 add_edge!(graph_ln, 2, 5)
-
-forbiddens = [graph_nn, graph_w, graph_m, graph_3c, graph_ln]
-
-novelties = Array{SimpleDiGraph}(undef, 0)
-for g in exclusion
-    seen = false
-    for f in forbiddens
-        if hasSubgraph(g, f)
-            seen = true
-            break
-        end
-    end
-    if !seen
-        push!(novelties, g)
-    end
-end
-println(length(novelties))
-
-for i in 1:length(novelties)
-    draw(PNG("/tmp/novelty" * string(i) * ".png", 16cm, 16cm), gplot(hasseDiagram(novelties[i])))
-end
+#
+#forbiddens = [graph_nn, graph_w, graph_m, graph_3c, graph_ln]
+#
+#for i in 1:length(exclusion)
+#    #seen = false
+#    for f in forbiddens
+#        #if hasSubgraph(transitiveclosure(g, true), transitiveclosure(f, true))
+#        #    seen = true
+#        #    break
+#        #end
+#        filenamef = "/tmp/7nodeBadGraph" * string(i) * ".png"
+#        filenames = "/tmp/7nodeSubgraph" * string(i) * ".png"
+#        t = printSubgraph(transitiveclosure(exclusion[i], true), transitiveclosure(f, true), filenamef, filenames)
+#        if t
+#            break
+#        end
+#    end
+#    #if !seen
+#    #    push!(novelties, g)
+#    #end
+#end

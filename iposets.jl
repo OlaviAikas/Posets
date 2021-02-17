@@ -40,6 +40,16 @@ function iHasse(g::Iposet)
     return Iposet(g.s, g.t, hasseDiagram(g.poset))
 end
 
+"""Transitive closure of an Iposet, doesn't change the original"""
+function itransitiveclosure(g::Iposet, b::Bool)
+    return Iposet(g.s, g.t, transitiveclosure(g.poset, b))
+end
+
+"""Transitive closure of an Iposet, changes the original"""
+function itransitiveclosure!(g::Iposet, b::Bool)
+    transitiveclosure!(g.poset, b)
+end
+
 """Get the gplot object for an Iposet with the interfaces coloured
 The key is:
 green - node in source
@@ -192,8 +202,8 @@ function isIsoIposet(g::Iposet, s::Iposet)
     g_v_profiles = Array{Tuple{Int, Int}}(undef, n)
     s_v_profiles = Array{Tuple{Int, Int}}(undef, n)
     for v in 1:n
-        g_v_profiles[v] = (length(inneighbors(g.poset, v)), length(outneighbors(g.poset, v)))
-        s_v_profiles[v] = (length(inneighbors(s.poset, v)), length(outneighbors(s.poset, v)))
+        g_v_profiles[v] = (inHash(g.poset, v), outHash(g.poset, v))
+        s_v_profiles[v] = (inHash(s.poset, v), outHash(s.poset, v))
     end
     # Check that the vertex profiles match in both graphs
     used = zeros(Bool, n)
@@ -214,32 +224,39 @@ function isIsoIposet(g::Iposet, s::Iposet)
     # Each class is a tuple with 2 arrays such that the nodes in the first array
     # are vertices in g that can potentially be mapped to those vertices of s in
     # the other array
-    indexed = Array{Bool}(undef, n)
+    indexed_g = Array{Bool}(undef, n)
+    indexed_s = Array{Bool}(undef, n)
     for i in 1:n
         if i in g.s || i in g.t
-            indexed[i] = true # We already know where the interfaces are mapped
-        else                  # to, so they don't need to be put in classes
-            indexed[i] = false
+            indexed_g[i] = true # We already know where the interfaces are mapped
+        else                    # to, so they don't need to be put in classes
+            indexed_g[i] = false
         end
+        if i in s.s || i in s.t
+            indexed_s[i] = true # We already know where the interfaces are mapped
+        else                    # to, so they don't need to be put in classes
+            indexed_s[i] = false
+        end   
     end
     for i in 1:n
-        if indexed[i]
+        if indexed_g[i]
             continue
         end
         class = (Array{Int}(undef, 1), Array{Int}(undef, 0))
         class[1][1] = i # Construct a new class with all of the nodes with the
                         # same invariant as "i"
         for v in 1:n
-            if s_v_profiles[v] == g_v_profiles[i]
+            if !indexed_s[v] && s_v_profiles[v] == g_v_profiles[i]
                 push!(class[2], v)
+                indexed_s[v] = true
             end
-            if g_v_profiles[v] == g_v_profiles[i] && v != i
+            if !indexed_g[v] && g_v_profiles[v] == g_v_profiles[i] && v != i
                 push!(class[1], v)
-                indexed[v] = true
+                indexed_g[v] = true
             end
         end
         push!(v_classes, class)
-        indexed[i] = true
+        indexed_g[i] = true
     end
     isom_parts = Array{Array{Array{Tuple{Int, Int}}}}(undef, length(v_classes))
     # Here we construct all the possible mappings of the nodes in each v-class
@@ -255,21 +272,26 @@ function isIsoIposet(g::Iposet, s::Iposet)
     # product of those mappings of the v-classes we just constructed 
     for perm in Iterators.product(isom_parts...)
         pos_isom = Array{Int}(undef, n)
+        mapped = zeros(Bool, n)
         # The interfaces must map nicely so this is sure information
         for i in 1:length(g.s)
             pos_isom[g.s[i]] = s.s[i]
+            mapped[g.s[i]] = true
         end
         for i in 1:length(g.t)
             pos_isom[g.t[i]] = s.t[i]
+            mapped[g.t[i]] = true
         end
         # Now we use the vertex profiles to see if we can fill in the rest of
         # pos_isom
         for info_array in perm
+            if !(false in mapped)
+                break
+            end
             for mapping in info_array
                 pos_isom[mapping[1]] = mapping[2]
             end
         end
-        #println(perm)
         #println(pos_isom)
         if isIsoIposet(g, s, pos_isom)
             return true
@@ -292,40 +314,41 @@ function genGpIposets(n::Int)
     if n == 0
         return [Iposet((), (), SimpleDiGraph(0))]
     end
-    alliposets = Array{Array{Iposet, 1}, 1}(undef, n)
-    for i in 1:length(alliposets)
+    alliposets = Array{Array{Iposet}}(undef, n, (n*(n-1))÷2 + 1)
+    for i in eachindex(alliposets)
         alliposets[i] = []
     end
     for s in [(), (1,)]
         for t in [(), (1,)]
-            push!(alliposets[1], Iposet(s, t, transitiveclosure(SimpleDiGraph(1), true)))
+            push!(alliposets[1, 1], Iposet(s, t, SimpleDiGraph(1)))
         end
     end
     if n == 1
-        return alliposets[1]
+        return vcat(alliposets[1,:]...)
     end
     for numpoints in 2:n
-        a = Array{Int}(undef, n)
-        for i in 1:n
+        a = Array{Int}(undef, n, (n*(n-1))÷2 + 1)
+        for i in eachindex(a)
             a[i] = length(alliposets[i])
         end
         println(a)
         for n1 in 1:(numpoints-1)
             for n2 in 1:(numpoints-1)
-                for ip1 in alliposets[n1]
-                    for ip2 in alliposets[n2]
+                for ip1 in vcat(alliposets[n1, :]...)
+                    for ip2 in vcat(alliposets[n2, :]...)
                         pg = potGlue(ip1, ip2)
                         if pg == numpoints
-                            ip = glue(ip1, ip2)
+                            ip = itransitiveclosure(glue(ip1, ip2), false)
+                            ipe = ne(ip.poset)
                             seen = false
-                            for iq in alliposets[numpoints]
+                            for iq in alliposets[numpoints, ipe + 1]
                                 if isIsoIposet(iq, ip)
                                     seen = true
                                     break
                                 end
                             end
                             if !seen
-                                push!(alliposets[numpoints], ip)
+                                push!(alliposets[numpoints, ipe + 1], ip)
                             end
                         else
                             continue
@@ -336,26 +359,27 @@ function genGpIposets(n::Int)
         end
         for n1 in 1:(numpoints-1)
             n2 = numpoints - n1
-            ips1 = alliposets[n1]
-            ips2 = alliposets[n2]
+            ips1 = vcat(alliposets[n1, :]...)
+            ips2 = vcat(alliposets[n2, :]...)
             for ip1 in ips1
                 for ip2 in ips2
-                    ip = parallel(ip1, ip2)
+                    ip = itransitiveclosure(parallel(ip1, ip2), false)
+                    ipe = ne(ip.poset)
                     seen = false
-                    for iq in alliposets[numpoints]
+                    for iq in alliposets[numpoints, ipe + 1]
                         if isIsoIposet(iq, ip)
                             seen = true
                             break
                         end
                     end
                     if !seen
-                        push!(alliposets[numpoints], ip)
+                        push!(alliposets[numpoints, ipe + 1], ip)
                     end
                 end
             end
         end
     end                  
-    return alliposets[n]
+    return vcat(alliposets[n, :]...)
 end
 
 """From an array of Iposets, get the different posets associated to them,
