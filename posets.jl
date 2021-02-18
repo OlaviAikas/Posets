@@ -82,18 +82,24 @@ This is the minimal graph gh such that transitiveclosure!(gh) = g. Used to draw
 nicer diagrams -- Attention! This is buggy and will be soon reworked
 with the help of the minFiltration function"""
 function hasseDiagram(g::SimpleDiGraph)
-    for i in 1:nv(g)
-        rem_edge!(g, i, i)
-    end
     s::SimpleDiGraph = g
-    for v in vertices(g)
-        for u in outneighbors(g, v)
-            for w in outneighbors(g, v)
-                if u != w && has_path(g, u, w)
-                    rem_edge!(s, v, w)
-                end
+    for i in 1:nv(s)
+        rem_edge!(s, i, i)
+    end
+    redundant_e = Array{LightGraphs.SimpleGraphs.SimpleEdge}(undef, 0)
+    for e in edges(s)
+        for pos_intermediary in outneighbors(s, src(e))
+            if pos_intermediary == dst(e)
+                continue
+            end
+            if dst(e) in outneighbors(s, pos_intermediary)
+                push!(redundant_e, e)
+                break
             end
         end
+    end
+    for e in redundant_e
+        rem_edge!(s, e)
     end
     return s
 end
@@ -390,16 +396,17 @@ function outHash(g::SimpleDiGraph, v::Int)
 end
 
 """Check if some desired graph s is a subgraph (or isomorphic to some subgraph)
-of the graph g"""
+of the graph g. Return a tuple (Bool, Array{Int}) to signify success and the
+subset of nodes that give the induced subgraph."""
 function hasSubgraph(g::SimpleDiGraph, s::SimpleDiGraph)
     subnodes = combinations(1:nv(g), nv(s))
     for nodes in subnodes
         subgraph = induced_subgraph(g, nodes)[1]
         if isIso(subgraph, s)
-            return true
+            return (true, nodes)
         end
     end
-    return false
+    return (false, [])
 end
 
 """Check if some desired graph s is a subgraph (or isomorphic to some subgraph)

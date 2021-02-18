@@ -20,8 +20,8 @@ using StatProfilerHTML
 #q = Iposet((1,), (4,), s)
 
 #draw(PNG("/tmp/Iposet1.png", 16cm, 16cm), igplot(p))
-genPosets(2)
-@time println(length(genPosets(7)))
+#genGpIposets(2)
+printPosets(removeInterfaces(genGpIposets(5)), "/tmp/Iposet")
 #isIsoIposet(p, q) ? println(true) : println(false)
 #genPosets(2)
 #@profilehtml genGpIposets(4)

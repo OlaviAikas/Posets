@@ -25,7 +25,6 @@ for g in posets7
         push!(exclusion, g)
     end
 end
-savePosets(exclusion, "NonGp7nodes")
 
 graph_nn = SimpleDiGraph(6)
 graph_m = SimpleDiGraph(6)
@@ -38,18 +37,23 @@ add_edge!(graph_nn, 2, 5)
 add_edge!(graph_nn, 3, 6)
 add_edge!(graph_nn, 2, 4)
 add_edge!(graph_nn, 3, 5)
+transitiveclosure!(graph_nn, true)
 
 add_edge!(graph_m, 1, 3)
 add_edge!(graph_m, 1, 4)
 add_edge!(graph_m, 2, 4)
 add_edge!(graph_m, 2, 5)
 add_edge!(graph_m, 3, 6)
+transitiveclosure!(graph_m, true)
+
 
 add_edge!(graph_w, 1, 4)
 add_edge!(graph_w, 2, 5)
 add_edge!(graph_w, 3, 5)
 add_edge!(graph_w, 3, 6)
 add_edge!(graph_w, 4, 6)
+transitiveclosure!(graph_w, true)
+
 
 add_edge!(graph_3c, 1, 4)
 add_edge!(graph_3c, 2, 5)
@@ -57,30 +61,50 @@ add_edge!(graph_3c, 3, 6)
 add_edge!(graph_3c, 2, 4)
 add_edge!(graph_3c, 3, 5)
 add_edge!(graph_3c, 1, 6)
+transitiveclosure!(graph_3c, true)
+
 
 add_edge!(graph_ln, 1, 3)
 add_edge!(graph_ln, 3, 5)
 add_edge!(graph_ln, 2, 4)
 add_edge!(graph_ln, 4, 6)
 add_edge!(graph_ln, 2, 5)
-#
-#forbiddens = [graph_nn, graph_w, graph_m, graph_3c, graph_ln]
-#
-#for i in 1:length(exclusion)
-#    #seen = false
-#    for f in forbiddens
-#        #if hasSubgraph(transitiveclosure(g, true), transitiveclosure(f, true))
-#        #    seen = true
-#        #    break
-#        #end
-#        filenamef = "/tmp/7nodeBadGraph" * string(i) * ".png"
-#        filenames = "/tmp/7nodeSubgraph" * string(i) * ".png"
-#        t = printSubgraph(transitiveclosure(exclusion[i], true), transitiveclosure(f, true), filenamef, filenames)
-#        if t
-#            break
-#        end
-#    end
-#    #if !seen
-#    #    push!(novelties, g)
-#    #end
-#end
+transitiveclosure!(graph_ln, true)
+
+forbiddens = [graph_nn, graph_w, graph_m, graph_3c, graph_ln]
+flabels = ["NN", "W", "M", "3C", "LN"]
+sgraphs = Array{Tuple{Int, String}}(undef, length(exclusion))
+
+for i in 1:length(exclusion)
+    for f in 1:length(forbiddens)
+        sg = hasSubgraph(exclusion[i], forbiddens[f])
+        if sg[1]
+            rnode = 0
+            for v in 1:nv(exclusion[i])
+                if !(v in sg[2])
+                    rnode = v
+                    break
+                end
+            end
+            sgraphs[i] = (rnode, flabels[f])
+            break
+        end
+    end
+end
+
+println(sgraphs)
+
+open("NonGPgraphs.gs", "w") do file
+    for i in 1:length(exclusion)
+        write(file, "Graph " * string(i) * "\n")
+        edge_strings = []
+        for e in edges(exclusion[i])
+            push!(edge_strings, string(src(e)) * ", " * string(dst(e)))
+        end
+        for s in edge_strings
+            write(file, s * "\n")
+        end
+        write(file, "rem " * string(sgraphs[i][1]) * " for " * sgraphs[i][2] * "\n")
+        write(file, "end\n\n")
+    end
+end
