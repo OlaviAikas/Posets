@@ -50,7 +50,7 @@ end
 poset. Returns an array where each index corresponding to a node in the graph
 is the label in the filtration"""
 function maxFiltration(g::SimpleDiGraph)
-    transitiveclosure!(g, true)
+    g = transitiveclosure(g, true)
     res = -1*ones(Int, nv(g))
     deleted = zeros(Bool, nv(g))
     level = 0
@@ -216,13 +216,13 @@ function isIso(g::SimpleDiGraph, s::SimpleDiGraph)
     return false
 end
 
-"""Generate all of the posets of size n, return them as a set"""
+"""Generate all of the posets of size n, return them as an array"""
 function genPosets(n::Int)
     #Quickly handle special cases 0 and 1 because they're easy
     if n == 0
-        return SimpleDiGraph(0)
+        return [SimpleDiGraph(0)]
     elseif n == 1
-        return SimpleDiGraph(1)
+        return [SimpleDiGraph(1)]
     end
     #Movin on...
     graph_counter = 0

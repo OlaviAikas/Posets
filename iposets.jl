@@ -331,6 +331,8 @@ function genGpIposets(n::Int)
         end
         return res
     end
+    ncalls = 0
+    callsum = 0
     for numpoints in 2:n
         #a = Array{Int}(undef, n, (n*(n-1))÷2 + 1)
         #for i in eachindex(a)
@@ -351,7 +353,12 @@ function genGpIposets(n::Int)
                             end
                             seen = false
                             for iq in alliposets[numpoints, ipe + 1]
-                                if isIsoIposetX(iq[1], iq[2], ip, vprof)
+                                c = isIsoIposetX(iq[1], iq[2], ip, vprof)
+                                if c[2] > 0
+                                    callsum += c[2]
+                                    ncalls += 1
+                                end
+                                if c[1]
                                     seen = true
                                     break
                                 end
@@ -380,7 +387,12 @@ function genGpIposets(n::Int)
                     end
                     seen = false
                     for iq in alliposets[numpoints, ipe + 1]
-                        if isIsoIposetX(iq[1], iq[2], ip, vprof)
+                        c = isIsoIposetX(iq[1], iq[2], ip, vprof)
+                        if c[2] > 0
+                            ncalls += 1
+                            callsum += c[2]
+                        end
+                        if c[1]
                             seen = true
                             break
                         end
@@ -397,6 +409,8 @@ function genGpIposets(n::Int)
     for i in 1:length(vc)
         res[i] = vc[i][1]
     end
+    avg_calls = callsum/ncalls
+    @printf("Avg. perms per 'bad' isom. call: %f\n", avg_calls)
     return res
 end
 
@@ -463,6 +477,43 @@ function genAllIposets(n::Int)
     return representatives
 end
 
+"""Generate all of the iposets with n nodes, k source interfaces and l target
+interfaces"""
+function genIposets(n::Int, k::Int, l::Int)
+    posets = genPosets(n)
+    iposets = Array{Array{Iposet}}(undef, length(posets))
+    vprofs = Array{Array{Tuple{Int, Int}}}(undef, length(posets))
+    for i in 1:length(iposets)
+        iposets[i] = []
+    end
+    for i in 1:length(posets)
+        vprofs[i] = Array{Tuple{Int, Int}}(undef, n)
+        for v in vertices(posets[i])
+            vprofs[i][v] = (inHash(posets[i], v), outHash(posets[i], v))
+        end
+    end
+    for i in 1:length(posets)
+        mins = minNodes(posets[i])
+        maxes = maxNodes(posets[i])
+        pos_sources = collect(permutations(mins, k))
+        pos_targets = collect(permutations(maxes, l))
+        for combination in Iterators.product(pos_sources, pos_targets)
+            nip = Iposet(Tuple(combination[1]), Tuple(combination[2]), posets[i])
+            seen = false
+            for ip in iposets[i]
+                if isIsoIposetX(ip, vprofs[i], nip, vprofs[i])[1]
+                    seen = true
+                    break
+                end
+            end
+            if !seen
+                push!(iposets[i], nip)
+            end
+        end
+    end
+    return vcat(iposets...)
+end
+
 """Special isomorphism function that takes the vertex profiles in as arguments
 so they're not recomputed every time. Also does not check for the number of
 nodes or edges since those are handled by genGpIposets"""
@@ -470,7 +521,7 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
     #Start with the easy stuff
     n = nv(g.poset)
     if length(g.s) != length(s.s) || length(g.t) != length(s.t)
-        return false
+        return (false, 0)
     end
     # Check that the vertex profiles match in both graphs
     used = zeros(Bool, n)
@@ -483,7 +534,7 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
             end
         end
         if !found
-            return false
+            return (false, 0)
         end
     end
     # Construct classes of vertices that can be isomorphic
@@ -536,7 +587,8 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
         end
     end
     # Now we look at select permutations of all the nodes by taking the cartessian
-    # product of those mappings of the v-classes we just constructed 
+    # product of those mappings of the v-classes we just constructed
+    counter = 1
     for perm in Iterators.product(isom_parts...)
         pos_isom = Array{Int}(undef, n)
         mapped = zeros(Bool, n)
@@ -561,8 +613,26 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
         end
         #println(pos_isom)
         if isIsoIposet(g, s, pos_isom)
-            return true
+            return (true, counter)
+        end
+        counter += 1
+    end
+    return (false, counter)
+end
+
+"""Check if an iposet is "almost weakly connected", e.g have one weakly connected
+component and 0 or more individual points"""
+function almostConnected(g::Iposet)
+    comps = weakly_connected_components(g.poset)
+    big_one = false
+    for comp in comps
+        if length(comp) > 1 && big_one == false
+            big_one = true
+        elseif length(comp) <= 1
+            continue
+        else
+            return false
         end
     end
-    return false
+    return true
 end
