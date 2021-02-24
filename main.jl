@@ -1,6 +1,7 @@
 include("posets.jl")
 include("iposets.jl")
 using StatProfilerHTML
+using Traceur
 
 #ps = genPosets(6)
 #savePosets(ps, "posets/6nodes")
@@ -18,7 +19,8 @@ using StatProfilerHTML
 #q = Iposet((1,), (4,), s)
 #println(almostConnected(q))
 
-@time println(length(genGpIposets(5)))
+@time genGpIposets(2)
+@time println(length(genGpIposets(6)))
 
 #draw(PNG("/tmp/Iposet1.png", 16cm, 16cm), igplot(p))
 #res_gp = zeros(Int, 6, 7, 7)
@@ -27,7 +29,7 @@ using StatProfilerHTML
 #    a = genGpIposets(n)
 #    for iposet in a
 #        res_gp[n, length(iposet.s) + 1, length(iposet.t) + 1] += 1
-#        if almostConnected(iposet)
+#        if almostConnected(iposet) && ne(hasseDiagram(iposet.poset)) > 0
 #            res_weak[n, length(iposet.s) + 1, length(iposet.t) + 1] += 1
 #        end
 #    end
@@ -44,7 +46,7 @@ using StatProfilerHTML
 #    end
 #end
 #
-#open("weakiposets.txt", "w") do file
+#open("almost_connected_no_discrete.txt", "w") do file
 #    for n in 1:6
 #        for k in 0:n
 #            for j in 0:n
@@ -54,7 +56,3 @@ using StatProfilerHTML
 #        end
 #    end
 #end
-#
-#isIsoIposet(p, q) ? println(true) : println(false)
-#genPosets(2)
-#@profilehtml genGpIposets(4)
