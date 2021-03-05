@@ -82,7 +82,7 @@ This is the minimal graph gh such that transitiveclosure!(gh) = g. Used to draw
 nicer diagrams -- Attention! This is buggy and will be soon reworked
 with the help of the minFiltration function"""
 function hasseDiagram(g::SimpleDiGraph)
-    s::SimpleDiGraph = g
+    s::SimpleDiGraph = deepcopy(g)
     for i in 1:nv(s)
         rem_edge!(s, i, i)
     end
@@ -375,7 +375,7 @@ function inHash(g::SimpleDiGraph, v::Int)
                 nhashes += inHash(g, neighbour)
             end
         end
-        return length(n) + 16*nhashes
+        return length(n) + nhashes << 4
     end
 end
 

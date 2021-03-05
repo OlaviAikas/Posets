@@ -1,7 +1,6 @@
 include("posets.jl")
 include("iposets.jl")
 using StatProfilerHTML
-using Traceur
 
 #ps = genPosets(6)
 #savePosets(ps, "posets/6nodes")
@@ -11,16 +10,47 @@ using Traceur
 #add_edge!(g, 1, 3)
 #add_edge!(g, 3, 4)
 #add_edge!(g, 4, 5)
-#p = Iposet((2,), (1,), g)
+#p = Iposet((1,), (5,), g)
+#
+#printPoset(p.poset, "/tmp/p.png")
+#printPoset(inversion(p).poset, "/tmp/p_inv.png")
 #
 #s = SimpleDiGraph(4)
 #add_edge!(s, 1, 2)
 #add_edge!(s, 3, 4)
 #q = Iposet((1,), (4,), s)
-#println(almostConnected(q))
+#println(glue(p, q))
 
-@time genGpIposets(2)
-@time println(length(genGpIposets(6)))
+@time genAllIposets(2)
+@time println(length(genAllIposets(6)))
+
+#alliposets = Array{Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}}(undef, (6*(6-1))÷2 + 1, 6 + 1, 6 + 1, 6)
+#for i in eachindex(alliposets)
+#    alliposets[i] = []
+#end
+#for s in [(), (1,)]
+#    for t in [(), (1,)]
+#        push!(alliposets[1, length(s) + 1, length(t) + 1, 1], (Iposet(s, t, SimpleDiGraph(1)), [(0, 0)]))
+#    end
+#end
+#filled = zeros(Bool, 7, 7, 6)
+#filled[1:2, 1:2, 1] = [true true; true true]
+#a = gpiPosets(6, 4, 0, alliposets, filled)
+#g = SimpleDiGraph(6)
+#add_edge!(g, 1, 3)
+#add_edge!(g, 2, 3)
+#add_edge!(g, 4, 6)
+#add_edge!(g, 5, 6)
+#ip = Iposet((1, 4, 2, 5), (), g)
+#itransitiveclosure!(ip, false)
+#seen = false
+#for iposet in a
+#    if isIsoIposet(iposet, ip)
+#        global seen = true
+#        break
+#    end
+#end
+#println(false)
 
 #draw(PNG("/tmp/Iposet1.png", 16cm, 16cm), igplot(p))
 #res_gp = zeros(Int, 6, 7, 7)

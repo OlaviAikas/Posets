@@ -3,6 +3,7 @@ using Colors
 using GraphPlot, Compose
 using Combinatorics
 import Cairo, Fontconfig
+import Base.Threads.@spawn
 include("posets.jl")
 
 struct GluingInterfacesDontMatchError <: Exception end
@@ -50,6 +51,17 @@ function itransitiveclosure!(g::Iposet, b::Bool)
     transitiveclosure!(g.poset, b)
 end
 
+"""Return the inversion an iposet, which is the same iposet but all of the
+edges are reversed and what used to be the target is now the source and
+vice versa."""
+function inversion(g::Iposet)
+    rposet = SimpleDiGraph(nv(g.poset))
+    for e in edges(g.poset)
+        add_edge!(rposet, dst(e), src(e))
+    end
+    return Iposet(g.t, g.s, rposet)
+end
+
 """Get the gplot object for an Iposet with the interfaces coloured
 The key is:
 green - node in source
@@ -74,48 +86,44 @@ end
 
 """Return gluing product of two Iposets"""
 function glue(g::Iposet, p::Iposet)
-    if length(g.t) != length(p.s)
+    il = length(g.t)
+    if il != length(p.s)
         throw(GluingInterfacesDontMatchError)
     end
-    rposet = SimpleDiGraph(nv(g.poset) + nv(p.poset) - length(g.t))
-    count::UInt, oldnew1, oldnew2 = 0, Dict{Int, Int}(), Dict{Int, Int}()
-    for v in vertices(g.poset)
-        count += 1
-        oldnew1[v] = count
+    np = nv(p.poset)
+    ng = nv(g.poset)
+    rposet = SimpleDiGraph(ng + np - il)
+    for e in edges(g.poset)
+        add_edge!(rposet, e)
     end
-    for v in vertices(p.poset)
-        if v in p.s
-            pos = findfirst(x -> x == v ? true : false, p.s)
-            corrtarget = g.t[pos]
-            oldnew2[v] = oldnew1[corrtarget]
-        else
-            count += 1
-            oldnew2[v] = count
+    pmap = zeros(Int, np) # pmap[vertex in p.poset] = vertex in rposet
+    for i in 1:il
+        pmap[p.s[i]] = g.t[i]
+    end
+    counter = 1
+    for v in 1:np
+        if pmap[v] == 0
+            pmap[v] = ng + counter
+            counter += 1
         end
     end
-    for e in edges(g.poset)
-        !add_edge!(rposet, oldnew1[src(e)], oldnew1[dst(e)])
-    end
     for e in edges(p.poset)
-        !add_edge!(rposet, oldnew2[src(e)], oldnew2[dst(e)])
+        add_edge!(rposet, pmap[src(e)], pmap[dst(e)])
     end
-    for x in vertices(g.poset)
-        if !(x in g.t)
-            for y in vertices(p.poset)
-                if !(y in p.s)
-                    add_edge!(rposet, oldnew1[x], oldnew2[y])
-                end
+    for v1 in vertices(g.poset)
+        if !(v1 in g.t)
+            for v2 in (ng + 1):(ng + np - il)
+                add_edge!(rposet, v1, v2)
             end
         end
     end
-    rs, rt = Array{Int}(undef, length(g.s)), Array{Int}(undef, length(p.t))
-    for i in 1:length(g.s)
-        rs[i] = oldnew1[g.s[i]]
+    tl = length(p.t)
+    rt = Array{Int}(undef, tl)
+    for i in 1:tl
+        rt[i] = pmap[p.t[i]]
     end
-    for i in 1:length(p.t)
-        rt[i] = oldnew2[p.t[i]]
-    end
-    return Iposet(Tuple(rs), Tuple(rt), rposet)
+    #foreach(println, edges(rposet))
+    return Iposet(g.s, Tuple(rt), rposet)
 end
 
 """Parallel composition of two Iposets"""
@@ -309,7 +317,7 @@ function potGlue(g::Iposet, s::Iposet)
     return nv(g.poset) + nv(s.poset) - length(g.t)
 end
 
-"""Generate all iposets with n points, up to isomorphism"""
+"""Generate all gp-iposets with n points, up to isomorphism"""
 function genGpIposets(n::Int)
     if n == 0
         return [Iposet((), (), SimpleDiGraph(0))]
@@ -332,14 +340,7 @@ function genGpIposets(n::Int)
         end
         return res
     end
-    ncalls = 0
-    callsum = 0
     for numpoints in 2:n
-        #a = Array{Int}(undef, n, (n*(n-1))÷2 + 1)
-        #for i in eachindex(a)
-        #    a[i] = length(alliposets[i])
-        #end
-        #println(a)
         for n1 in 1:(numpoints-1)
             for n2 in 1:(numpoints-1)
                 u = n1 + n2 - numpoints
@@ -358,12 +359,7 @@ function genGpIposets(n::Int)
                         end
                         seen = false
                         for iq in alliposets[ipe + 1, ips + 1, ipt + 1, numpoints]
-                            c = isIsoIposetX(iq[1], iq[2], ip, vprof)
-                            if c[2] > 0
-                                callsum += c[2]
-                                ncalls += 1
-                            end
-                            if c[1]
+                            if isIsoIposetX(iq[1], iq[2], ip, vprof)
                                 seen = true
                                 break
                             end
@@ -391,12 +387,7 @@ function genGpIposets(n::Int)
                     end
                     seen = false
                     for iq in alliposets[ipe + 1, ips + 1, ipt + 1, numpoints]
-                        c = isIsoIposetX(iq[1], iq[2], ip, vprof)
-                        if c[2] > 0
-                            ncalls += 1
-                            callsum += c[2]
-                        end
-                        if c[1]
+                        if isIsoIposetX(iq[1], iq[2], ip, vprof)
                             seen = true
                             break
                         end
@@ -413,8 +404,6 @@ function genGpIposets(n::Int)
     @inbounds for i in 1:length(vc)
         res[i] = vc[i][1]
     end
-    avg_calls = callsum/ncalls
-    @printf("Avg. perms per 'bad' isom. call: %f\n", avg_calls)
     return res
 end
 
@@ -440,45 +429,181 @@ function removeInterfaces(a::Array{Iposet})
     return res
 end
 
-"""Generate all of the possible iposets with n nodes, up to isomorphism"""
-function genAllIposets(n::Int)
-    println("Getting posets")
-    posets = genPosets(n)
-    iposets = Array{Iposet}(undef, 0)
-    println("Found posets, computing possible interfaces")
-    for poset in posets
-        mins = minNodes(poset)
-        maxes = maxNodes(poset)
-        #println(mins)
-        for s_length in 0:length(mins)
-            for t_length in 0:length(maxes)
-                pos_sources = collect(permutations(mins, s_length))
-                pos_targets = collect(permutations(maxes, t_length))
-                for combination in Iterators.product(pos_sources, pos_targets)
-                    #println(combination)
-                    push!(iposets, Iposet(Tuple(combination[1]), Tuple(combination[2]), poset))
+"""Recursively compute the set (array) of gp-posets with n nodes."""
+function gpPosets(n)
+    alliposets = Array{Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}}(undef, (n*(n-1))÷2 + 1, n + 1, n + 1, n)
+    @inbounds for i in eachindex(alliposets)
+        alliposets[i] = []
+    end
+    for s in [(), (1,)]
+        for t in [(), (1,)]
+            push!(alliposets[1, length(s) + 1, length(t) + 1, 1], (Iposet(s, t, SimpleDiGraph(1)), [(0, 0)]))
+        end
+    end
+    filled = zeros(Bool, n + 1, n + 1, n)
+    filled[1:2, 1:2, 1] = [true true; true true]
+    locks = Array{ReentrantLock}(undef, (n*(n-1))÷2 + 2, n + 1, n + 1, n)
+    for i in eachindex(locks)
+        locks[i] = ReentrantLock()
+    end
+    a = gpiPosets(n, 0, 0, alliposets, filled, locks)
+    res = Array{SimpleDiGraph}(undef, length(a))
+    @inbounds for i in 1:length(a)
+        res[i] = a[i].poset
+    end
+    return res
+end
+
+"""Recursively compute the set of gp-iposets with k sources and l targets.
+The arrays alliposets and filled are for memoisation"""
+function gpiPosets(n, k, l, alliposets, filled, locks)
+    lock(locks[end, k + 1, l + 1, n])
+    if filled[k + 1, l + 1, n]
+        unlock(locks[end, k + 1, l + 1, n])
+        vc = vcat(alliposets[:, k + 1, l + 1, n]...)
+        res = Array{Iposet}(undef, length(vc))
+        @inbounds for i in 1:length(vc)
+            res[i] = vc[i][1]
+        end
+        return res
+    end
+    if filled[l + 1, k + 1, n]
+        for ne in 1:size(alliposets, 1)
+            nes = length(alliposets[ne, l + 1, k + 1, n])
+            iposets = Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}(undef, nes)
+            for i in 1:nes
+                nip = inversion(alliposets[ne, l + 1, k + 1, n][i][1])
+                vproflen = length(alliposets[ne, l + 1, k + 1, n][i][2])
+                nvprof = Array{Tuple{Int, Int}}(undef, vproflen)
+                for j in 1:vproflen
+                    nvprof[j] = (alliposets[ne, l + 1, k + 1, n][i][2][j][2], alliposets[ne, l + 1, k + 1, n][i][2][j][1])
+                end
+                iposets[i] = (nip, nvprof)
+            end
+            alliposets[ne, k + 1, l + 1, n] = iposets
+        end
+        filled[k + 1, l + 1, n] = true
+        unlock(locks[end, k + 1, l + 1, n])
+        vc = vcat(alliposets[:, k + 1, l + 1, n]...)
+        res = Array{Iposet}(undef, length(vc))
+        @inbounds for i in 1:length(vc)
+            res[i] = vc[i][1]
+        end
+        return res
+    end
+    Threads.@threads for n1 in 1:(n-1)
+        Threads.@threads for n2 in 1:(n-1)
+            u = n1 + n2 - n
+            if u < 0 || u >= n1 || u >= n2 #|| u >= (n - 2)
+                continue
+            end
+            for ip1 in gpiPosets(n1, k, u, alliposets, filled, locks)
+                for ip2 in gpiPosets(n2, u, l, alliposets, filled, locks)
+                    ip = itransitiveclosure(glue(ip1, ip2), false)
+                    ipe = ne(ip.poset)
+                    vprof = Array{Tuple{Int, Int}}(undef, n)
+                    @inbounds for v in 1:n
+                        vprof[v] = (inHash(ip.poset, v), outHash(ip.poset, v))
+                    end
+                    lock(locks[ipe + 1, k + 1, l + 1, n])
+                    seen = false
+                    for iq in alliposets[ipe + 1, k + 1, l + 1, n]
+                        if isIsoIposetX(iq[1], iq[2], ip, vprof)
+                            seen = true
+                            break
+                        end
+                    end
+                    if !seen
+                        push!(alliposets[ipe + 1, k + 1, l + 1, n], (ip, vprof))
+                    end
+                    unlock(locks[ipe + 1, k + 1, l + 1, n])
                 end
             end
         end
     end
-    println("Got interfaces, checking for isomorphisms")
-    representatives = Array{Iposet}(undef, 0)
-    ipl = length(iposets)
-    for i in 1:length(iposets)
-        @printf("Checking iposet %d/%d\n", i, ipl)
-        seen = false
-        for iq in representatives
-            if isIsoIposet(iposets[i], iq)
-                seen = true
-                break
+    Threads.@threads for n1 in 1:(n-1)
+        n2 = n - n1
+        for ip1s in 0:k
+            ip2s = k - ip1s
+            for ip1t in 0:l
+                ip2t = l - ip1t
+                for ip1 in gpiPosets(n1, ip1s, ip1t, alliposets, filled, locks)
+                    for ip2 in gpiPosets(n2, ip2s, ip2t, alliposets, filled, locks)
+                        ip = itransitiveclosure(parallel(ip1, ip2), false)
+                        ipe = ne(ip.poset)
+                        vprof = Array{Tuple{Int, Int}}(undef, n)
+                        for v in 1:n
+                            vprof[v] = (inHash(ip.poset, v), outHash(ip.poset, v))
+                        end
+                        lock(locks[ipe + 1, k + 1, l + 1, n])
+                        seen = false
+                        for iq in alliposets[ipe + 1, k + 1, l + 1, n]
+                            if isIsoIposetX(iq[1], iq[2], ip, vprof)
+                                seen = true
+                                break
+                            end
+                        end
+                        if !seen
+                            push!(alliposets[ipe + 1, k + 1, l + 1, n], (ip, vprof))
+                        end
+                        unlock(locks[ipe + 1, k + 1, l + 1, n])
+                    end
+                end
             end
         end
-        if !seen
-            push!(representatives, iposets[i])
+    end
+    filled[k + 1, l + 1, n] = true
+    unlock(locks[end, k + 1, l + 1, n])
+    vc = vcat(alliposets[:, k + 1, l + 1, n]...)
+    res = Array{Iposet}(undef, length(vc))
+    @inbounds for i in 1:length(vc)
+        res[i] = vc[i][1]
+    end
+    return res
+end
+
+
+"""Generate all of the possible iposets with n nodes, up to isomorphism"""
+function genAllIposets(n::Int)
+    println("Getting posets")
+    posets = genPosets(n)
+    println("Got iposets")
+    np = length(posets)
+    iposets = Array{Array{Iposet}}(undef, n + 1, n + 1, np)
+    for i in eachindex(iposets)
+        iposets[i] = []
+    end
+    vprofs = Array{Array{Tuple{Int, Int}}}(undef, length(posets))
+    for i in 1:np
+        vprofs[i] = Array{Tuple{Int, Int}}(undef, n)
+        for v in vertices(posets[i])
+            vprofs[i][v] = (inHash(posets[i], v), outHash(posets[i], v))
         end
     end
-    println("isomorphisms done")
-    return representatives
+    for i in 1:np
+        for k in 0:n
+            for l in 0:n
+                mins = minNodes(posets[i])
+                maxes = maxNodes(posets[i])
+                pos_sources = collect(permutations(mins, k))
+                pos_targets = collect(permutations(maxes, l))
+                for combination in Iterators.product(pos_sources, pos_targets)
+                    nip = Iposet(Tuple(combination[1]), Tuple(combination[2]), posets[i])
+                    seen = false
+                    for ip in iposets[k + 1, l + 1, i]
+                        if isIsoIposetX(ip, vprofs[i], nip, vprofs[i])
+                            seen = true
+                            break
+                        end
+                    end
+                    if !seen
+                        push!(iposets[k + 1, l + 1, i], nip)
+                    end
+                end
+            end
+        end
+    end
+    return vcat(iposets...)
 end
 
 """Generate all of the iposets with n nodes, k source interfaces and l target
@@ -505,7 +630,7 @@ function genIposets(n::Int, k::Int, l::Int)
             nip = Iposet(Tuple(combination[1]), Tuple(combination[2]), posets[i])
             seen = false
             for ip in iposets[i]
-                if isIsoIposetX(ip, vprofs[i], nip, vprofs[i])[1]
+                if isIsoIposetX(ip, vprofs[i], nip, vprofs[i])
                     seen = true
                     break
                 end
@@ -561,7 +686,7 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
             end
         end
         if !found
-            return (false, 0)
+            return false
         end
     end
     # Construct an array/mapping node -> list of possible nodes it can map to
@@ -585,7 +710,7 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
     end
     for a in targets
         if length(a) > 1
-            return (false, 0)
+            return false
         end
     end
     @inbounds for v in 1:n
@@ -600,7 +725,6 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
     end
     # Now we see which combinations of those targets can give us bijective
     # mappings, and hope they're graph isomorphisms
-    counter = 1
     for pos_isom in Iterators.product(targets...)
         #Check bijectivity
         bij = true
@@ -614,11 +738,10 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
             continue
         end
         if isIsoIposetX(g, s, pos_isom)
-            return (true, counter)
+            return true
         end
-        counter += 1
     end
-    return (false, counter)
+    return false
 end
 
 """Check if an iposet is "almost weakly connected", e.g have one weakly connected
