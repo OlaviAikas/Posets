@@ -22,7 +22,7 @@ using StatProfilerHTML
 #println(glue(p, q))
 
 @time genAllIposets(2)
-@time println(length(genAllIposets(6)))
+@time println(length(genAllIposets(4)))
 
 #alliposets = Array{Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}}(undef, (6*(6-1))÷2 + 1, 6 + 1, 6 + 1, 6)
 #for i in eachindex(alliposets)
