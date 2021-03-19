@@ -22,9 +22,14 @@ using StatProfilerHTML
 #q = Iposet((1,), (4,), s)
 #println(glue(p, q))
 
+<<<<<<< HEAD
 a = gpiPosets(3)
 b = gpiPosets(4)
 println(a == b)
+=======
+@time genAllIposets(2)
+@time println(length(genAllIposets(4)))
+>>>>>>> 135f00052f2c1b2e316b45745344ad4b5d32d630
 
 #@time gpiPosets(2)
 #@time println(length(gpiPosets(7)))
