@@ -1,0 +1,20 @@
+one iposet per line:
+
+n k e1 .. ek [s [t]]
+
+n: number of points, numbered from 0 to n-1
+
+k: number of edges in Hasse diagram
+
+e1 .. ek: edges:
+
+   format ab
+   a = source point, b = target point
+
+s: sources:
+
+   format - or a+
+   a+: string containing all points in source interface
+   -: empty source interface; only if t exists
+
+t: targets: format a+ like for s (may not be -)
