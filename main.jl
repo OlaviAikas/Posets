@@ -1,5 +1,6 @@
 include("posets.jl")
 include("iposets.jl")
+include("uli.jl")
 using StatProfilerHTML
 
 #ps = genPosets(6)
@@ -22,9 +23,9 @@ using StatProfilerHTML
 #q = Iposet((1,), (4,), s)
 #println(glue(p, q))
 
-a = gpiPosets(3)
-b = gpiPosets(4)
-println(a == b)
+a = gpiPosets(6)
+saveIposets(a, "gpiposets/gpi6.ips")
+
 
 #@time gpiPosets(2)
 #@time println(length(gpiPosets(7)))

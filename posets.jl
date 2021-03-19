@@ -4,6 +4,7 @@ using LightGraphs
 using Colors
 using Printf
 using Combinatorics
+import Base.==
 
 """Check if the graph g is antisymmetric, assuming that it is already acyclic."""
 function isAntiSymmetric(g::SimpleDiGraph)
@@ -532,4 +533,22 @@ function printSubgraph(g::SimpleDiGraph, s::SimpleDiGraph, filenamef::String, fi
     end
     println("Subgraph not found")
     return false
+end
+
+"""Overload equality for Array{SimpleDiGraph} so you can easily check if two
+arrays have the same posets up to isomorphism"""
+function ==(a::Array{SimpleDiGraph}, b::Array{SimpleDiGraph})
+    for ps1 in a
+        seen = false
+        for ps2 in b
+            if isIso(ps1, ps2)
+                seen = true
+                break
+            end
+        end
+        if !seen
+            return false
+        end
+    end
+    return true
 end
