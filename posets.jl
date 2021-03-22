@@ -4,6 +4,7 @@ using LightGraphs
 using Colors
 using Printf
 using Combinatorics
+import Base.==
 
 """Check if the graph g is antisymmetric, assuming that it is already acyclic."""
 function isAntiSymmetric(g::SimpleDiGraph)
@@ -216,6 +217,80 @@ function isIso(g::SimpleDiGraph, s::SimpleDiGraph)
     return false
 end
 
+"""Check if the tuple a is an isomorphism for the graphs g and s without checking
+for number of vertices or that a is bijective"""
+function isIsoX(g::SimpleDiGraph, s::SimpleDiGraph, a::Tuple{Vararg{Int}})
+    for vertex in 1:length(a)
+        neighbours_in_g = inneighbors(g, vertex)
+        neighbours_in_s = inneighbors(s, a[vertex])
+        for neighbour in neighbours_in_g
+            if !(a[neighbour] in neighbours_in_s)
+                return false
+            end
+        end
+        neighbours_out_g = outneighbors(g, vertex)
+        neighbours_out_s = outneighbors(s, a[vertex])
+        for neighbour in neighbours_out_g
+            if !(a[neighbour] in neighbours_out_s)
+                return false
+            end
+        end
+    end
+    return true
+end
+
+"""Same as isIsoIposetX but for normal posets, use with caution"""
+function isIsoX(g::SimpleDiGraph, g_v_profiles::Array{Tuple{Int, Int}}, 
+                s::SimpleDiGraph, s_v_profiles::Array{Tuple{Int, Int}})
+    #Start with the easy stuff
+    n = nv(g)
+    # Check that the vertex profiles match in both graphs
+    used = zeros(Bool, n)
+    @inbounds for i in 1:n
+        found = false
+        for j in 1:n
+            if g_v_profiles[i] == s_v_profiles[j] && !used[j]
+                found = true
+                break
+            end
+        end
+        if !found
+            return false
+        end
+    end
+    # Construct an array/mapping node -> list of possible nodes it can map to
+    targets = Array{Array{Int}}(undef, n)
+    @inbounds for i in 1:n
+        targets[i] = []
+    end
+    @inbounds for v in 1:n
+        for i in 1:n
+            if g_v_profiles[v] == s_v_profiles[i]
+                push!(targets[v], i)
+            end
+        end
+    end
+    # Now we see which combinations of those targets can give us bijective
+    # mappings, and hope they're graph isomorphisms
+    for pos_isom in Iterators.product(targets...)
+        #Check bijectivity
+        bij = true
+        @inbounds for i in 1:n
+            if !(i in pos_isom)
+                bij = false
+                break
+            end
+        end
+        if !bij
+            continue
+        end
+        if isIsoX(g, s, pos_isom)
+            return true
+        end
+    end
+    return false
+end
+
 """Generate all of the posets of size n, return them as an array"""
 function genPosets(n::Int)
     #Quickly handle special cases 0 and 1 because they're easy
@@ -225,9 +300,7 @@ function genPosets(n::Int)
         return [SimpleDiGraph(1)]
     end
     #Movin on...
-    graph_counter = 0
     max_edges = (n*(n-1))÷2 #÷ is the integer division character
-    representatives = Array{SimpleDiGraph}(undef, 0)
     all_edges = Array{Tuple{Int, Int}}(undef, max_edges)
     en::UInt = 1
     for i in 1:(n-1)
@@ -237,23 +310,28 @@ function genPosets(n::Int)
         end
     end
     println(all_edges)
+    res = Array{Array{Tuple{SimpleDiGraph, Array{Tuple{Int, Int}}}}}(undef, max_edges + 1)
+    for i in eachindex(res)
+        res[i] = []
+    end
     for numedges in 0:max_edges
-        #@printf("Considering %d edges\n", numedges)
         #Get all the ways to distribute the edges
-        distributions = collect(combinations(all_edges, numedges))
-        ld = length(distributions)
-        for i in 1:ld
-            #@printf("Checking distribution %d/%d\n", i, ld)
+        for distribution in combinations(all_edges, numedges)
             g = SimpleDiGraph(n) #New graph with n nodes
             #Now we put the edges in
-            for e in distributions[i]
+            for e in distribution
                 add_edge!(g, e[1], e[2])
             end
-            transitiveclosure!(g, true) #Take the transitive closure
+            transitiveclosure!(g, false) #Take the transitive closure
+            pne = ne(g)
+            vprof = Array{Tuple{Int, Int}}(undef, n)
+            @inbounds for v in 1:n
+                vprof[v] = (inHash(g, v), outHash(g, v))
+            end
             if isAntiSymmetric(g)
                 is_iso = false
-                for s in representatives
-                    if isIso(g, s)
+                for s in res[pne + 1]
+                    if isIsoX(g, vprof, s[1], s[2])
                         is_iso = true
                         break
                     end
@@ -261,13 +339,16 @@ function genPosets(n::Int)
                 if is_iso
                     continue
                 end
-                graph_counter += 1
-                println("Found a representative, " * string(graph_counter) * " so far")
-                push!(representatives, g)
+                push!(res[pne + 1], (g, vprof))
             end
         end
     end
-    return representatives
+    vc = vcat(res...)
+    res = Array{SimpleDiGraph}(undef, length(vc))
+    @inbounds for i in 1:length(vc)
+        res[i] = vc[i][1]
+    end
+    return res
 end
 
 """Print a poset into the given filename in a nice way such that the nodes are
@@ -452,4 +533,22 @@ function printSubgraph(g::SimpleDiGraph, s::SimpleDiGraph, filenamef::String, fi
     end
     println("Subgraph not found")
     return false
+end
+
+"""Overload equality for Array{SimpleDiGraph} so you can easily check if two
+arrays have the same posets up to isomorphism"""
+function ==(a::Array{SimpleDiGraph}, b::Array{SimpleDiGraph})
+    for ps1 in a
+        seen = false
+        for ps2 in b
+            if isIso(ps1, ps2)
+                seen = true
+                break
+            end
+        end
+        if !seen
+            return false
+        end
+    end
+    return true
 end

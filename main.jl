@@ -1,16 +1,18 @@
 include("posets.jl")
 include("iposets.jl")
+include("uli.jl")
 using StatProfilerHTML
 
 #ps = genPosets(6)
 #savePosets(ps, "posets/6nodes")
 
-#g = SimpleDiGraph(5)
+#g = SimpleDiGraph(12)
 #add_edge!(g, 1, 2)
 #add_edge!(g, 1, 3)
 #add_edge!(g, 3, 4)
-#add_edge!(g, 4, 5)
-#p = Iposet((1,), (5,), g)
+#add_edge!(g, 10, 11)
+#p = Iposet((1,2,3), (4,5,12), g)
+#println(toString(p))
 #
 #printPoset(p.poset, "/tmp/p.png")
 #printPoset(inversion(p).poset, "/tmp/p_inv.png")
@@ -21,9 +23,12 @@ using StatProfilerHTML
 #q = Iposet((1,), (4,), s)
 #println(glue(p, q))
 
-@time genAllIposets(2)
-@time println(length(genAllIposets(4)))
+a = gpiPosets(6)
+saveIposets(a, "gpiposets/gpi6.ips")
 
+
+#@time gpiPosets(2)
+#@time println(length(gpiPosets(7)))
 #alliposets = Array{Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}}(undef, (6*(6-1))÷2 + 1, 6 + 1, 6 + 1, 6)
 #for i in eachindex(alliposets)
 #    alliposets[i] = []

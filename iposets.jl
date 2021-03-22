@@ -4,6 +4,7 @@ using GraphPlot, Compose
 using Combinatorics
 import Cairo, Fontconfig
 import Base.Threads.@spawn
+import Base.==
 include("posets.jl")
 
 struct GluingInterfacesDontMatchError <: Exception end
@@ -14,6 +15,9 @@ function is_min(p::SimpleDiGraph, s::Tuple{Vararg{Int}})
         if length(inneighbors(p, v)) > 1
             return false
         end
+        if length(inneighbors(p, v)) == 1 && inneighbors(p, v) != [v]
+            return false
+        end
     end
     return true
 end
@@ -22,6 +26,9 @@ end
 function is_max(p::SimpleDiGraph, t::Tuple{Vararg{Int}})
     for v in t
         if length(outneighbors(p, v)) > 1
+            return false
+        end
+        if length(outneighbors(p, v)) == 1 && outneighbors(p, v) != [v]
             return false
         end
     end
@@ -429,6 +436,35 @@ function removeInterfaces(a::Array{Iposet})
     return res
 end
 
+"""Recursively compute the set (array) of gp-iposets with n nodes."""
+function gpiPosets(n)
+    alliposets = Array{Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}}(undef, (n*(n-1))÷2 + 1, n + 1, n + 1, n)
+    @inbounds for i in eachindex(alliposets)
+        alliposets[i] = []
+    end
+    for s in [(), (1,)]
+        for t in [(), (1,)]
+            push!(alliposets[1, length(s) + 1, length(t) + 1, 1], (Iposet(s, t, SimpleDiGraph(1)), [(0, 0)]))
+        end
+    end
+    filled = zeros(Bool, n + 1, n + 1, n)
+    filled[1:2, 1:2, 1] = [true true; true true]
+    locks = Array{ReentrantLock}(undef, (n*(n-1))÷2 + 2, n + 1, n + 1, n)
+    for i in eachindex(locks)
+        locks[i] = ReentrantLock()
+    end
+    elems = Array{Array{Iposet}}(undef, n + 1, n + 1)
+    for i in eachindex(elems)
+        elems[i] = []
+    end
+    Threads.@threads for i in 1:(n+1)
+        Threads.@threads for j in 1:(n+1)
+            elems[i, j] = gpiPosets(n, i - 1, j - 1, alliposets, filled, locks)
+        end
+    end
+    return vcat(elems...)
+end
+
 """Recursively compute the set (array) of gp-posets with n nodes."""
 function gpPosets(n)
     alliposets = Array{Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}}(undef, (n*(n-1))÷2 + 1, n + 1, n + 1, n)
@@ -457,6 +493,7 @@ end
 """Recursively compute the set of gp-iposets with k sources and l targets.
 The arrays alliposets and filled are for memoisation"""
 function gpiPosets(n, k, l, alliposets, filled, locks)
+    #@printf("Fill ratio: %f\n", count(x -> x, filled)/length(filled))
     lock(locks[end, k + 1, l + 1, n])
     if filled[k + 1, l + 1, n]
         unlock(locks[end, k + 1, l + 1, n])
@@ -494,7 +531,7 @@ function gpiPosets(n, k, l, alliposets, filled, locks)
     Threads.@threads for n1 in 1:(n-1)
         Threads.@threads for n2 in 1:(n-1)
             u = n1 + n2 - n
-            if u < 0 || u >= n1 || u >= n2 #|| u >= (n - 2)
+            if u < 0 || u >= n1 || u >= n2
                 continue
             end
             for ip1 in gpiPosets(n1, k, u, alliposets, filled, locks)
@@ -567,7 +604,7 @@ end
 function genAllIposets(n::Int)
     println("Getting posets")
     posets = genPosets(n)
-    println("Got iposets")
+    println("Got posets")
     np = length(posets)
     iposets = Array{Array{Iposet}}(undef, n + 1, n + 1, np)
     for i in eachindex(iposets)
@@ -581,8 +618,9 @@ function genAllIposets(n::Int)
         end
     end
     for i in 1:np
-        for k in 0:n
-            for l in 0:n
+        println("Interfacing poset $i")
+        Threads.@threads for k in 0:n
+            Threads.@threads for l in 0:n
                 mins = minNodes(posets[i])
                 maxes = maxNodes(posets[i])
                 pos_sources = collect(permutations(mins, k))
@@ -755,6 +793,99 @@ function almostConnected(g::Iposet)
         elseif length(comp) <= 1
             continue
         else
+            return false
+        end
+    end
+    return true
+end
+
+"""Return a string representation of an Iposet to be printed to file"""
+function toString(g::Iposet)
+    n_vertices = string(nv(g.poset), base=16)
+    n_edges = string(ne(g.poset), base=16)
+
+    res = "$n_vertices $n_edges "
+
+    e_list = [string(src(e), base=16)*string(dst(e), base=16) for e in edges(g.poset)]
+    for e in e_list
+        res *= e * " "
+    end
+
+    if length(g.s) == 0 && length(g.t) == 0
+        return res[1:end-1]
+    end
+    if length(g.s) == 0
+        res *= "- "
+        for t in g.t
+            res *= string(t, base=16)
+        end
+        return res
+    end
+    for s in g.s
+        res *= string(s, base=16)
+    end
+    if length(g.t) == 0
+        return res
+    end
+    res *= " "
+    for t in g.t
+        res *= string(t, base=16)
+    end
+    return res
+end
+
+"""Save an array of iposets into the given filename"""
+function saveIposets(a::Array{Iposet}, filename::String)
+    open(filename, "w") do file
+        for ips in a
+            write(file, toString(ips)*"\n")
+        end
+    end
+end
+
+"""Read a file of iposets and return them in an array"""
+function loadIposets(filename::String)
+    res = Array{Iposet}(undef, 0)
+    open(filename, "r") do file
+        for line in eachline(file)
+            nums = split(line)
+            np = parse(Int, nums[1], base=16) # number of points
+            ne = parse(Int, nums[2], base=16) # number of edges
+            #println(nums, np, ne)
+            dg = SimpleDiGraph(np)
+            for edges_num in nums[3:ne+2]
+                add_edge!(dg, parse(Int, edges_num[1], base=16), parse(Int, edges_num[2], base=16))
+            end
+            if length(nums) == ne+2 # no sources neither targets
+                s, t = (), ()
+            elseif length(nums) == ne+3 # sources, but no targets
+                s = Tuple([parse(Int, x, base=16) for x in nums[ne+3]])
+                t = ()
+            elseif length(nums) == ne+4 && nums[ne+3] == "-" # targets, but no sources
+                s = ()
+                t = Tuple([parse(Int, x, base=16) for x in nums[ne+4]])
+            else # sources and targets
+                s = Tuple([parse(Int, x, base=16) for x in nums[ne+3]])
+                t = Tuple([parse(Int, x, base=16) for x in nums[ne+4]])
+            end
+            push!(res, Iposet(s, t, dg))
+    end
+        return res
+    end
+end
+
+"""Overload equality for Array{Iposet} so you can easily check if two arrays
+have the same iposets up to isomorphism"""
+function ==(a::Array{Iposet}, b::Array{Iposet})
+    for ips1 in a
+        seen = false
+        for ips2 in b
+            if isIsoIposet(ips1, ips2)
+                seen = true
+                break
+            end
+        end
+        if !seen
             return false
         end
     end
