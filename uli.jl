@@ -33,7 +33,27 @@ function readIposets(filename)
     end
 end
 
-#@time genAllIposets(2)
-#@time println(length(genAllIposets(4)))
-ip = readIposets("test.txt")
-println(ip[end])
+"""Turn iposet into string representation a la McKay"""
+function iposetToString(ip)
+    np = nv(ip.poset)
+    ne = length(edges(ip.poset))
+    println(np, ne)
+end
+
+
+"""Write a file of iposets"""
+function writeIposets(ips, filename)
+    open(filename, "w") do file
+        write(file, "Hello\n\nHell\n")
+    end
+end
+
+ips = readIposets("test.txt")
+println(length(ips), " ", ips[end])
+
+iposetToString(ips[end])
+#writeIposets(ip, "out.txt")
+
+
+
+
