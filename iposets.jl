@@ -801,6 +801,8 @@ end
 
 """Return a string representation of an Iposet to be printed to file"""
 function toString(g::Iposet)
+    #g = iHasse(itransitiveclosure(g, false)) #Uli
+    g = iHasse(g) #Uli
     n_vertices = string(nv(g.poset), base=16)
     n_edges = string(ne(g.poset), base=16)
 
