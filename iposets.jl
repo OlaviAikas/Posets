@@ -531,12 +531,12 @@ function gpiPosets(n, k, l, alliposets, filled, locks)
     Threads.@threads for n1 in 1:(n-1)
         Threads.@threads for n2 in 1:(n-1)
             u = n1 + n2 - n
-            if u < 0 || u >= n1 || u >= n2
+            if u < 0
                 continue
             end
             for ip1 in gpiPosets(n1, k, u, alliposets, filled, locks)
                 for ip2 in gpiPosets(n2, u, l, alliposets, filled, locks)
-                    ip = itransitiveclosure(glue(ip1, ip2), false)
+                    ip = glue(ip1, ip2)
                     ipe = ne(ip.poset)
                     vprof = Array{Tuple{Int, Int}}(undef, n)
                     @inbounds for v in 1:n
@@ -566,7 +566,7 @@ function gpiPosets(n, k, l, alliposets, filled, locks)
                 ip2t = l - ip1t
                 for ip1 in gpiPosets(n1, ip1s, ip1t, alliposets, filled, locks)
                     for ip2 in gpiPosets(n2, ip2s, ip2t, alliposets, filled, locks)
-                        ip = itransitiveclosure(parallel(ip1, ip2), false)
+                        ip = parallel(ip1, ip2)
                         ipe = ne(ip.poset)
                         vprof = Array{Tuple{Int, Int}}(undef, n)
                         for v in 1:n
