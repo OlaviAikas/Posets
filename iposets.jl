@@ -491,7 +491,11 @@ function gpPosets(n)
 end
 
 """Recursively compute the set of gp-iposets with k sources and l targets.
-The arrays alliposets and filled are for memoisation"""
+The arrays alliposets and filled are for memoisation.
+alliposets: num_edg+1 x num_sourc+1 x num_targ+1 x num_points
+locks: same
+filled: num_sourc+1 x num_targ+1 x num_points
+"""
 function gpiPosets(n, k, l, alliposets, filled, locks)
     #@printf("Fill ratio: %f\n", count(x -> x, filled)/length(filled))
     lock(locks[end, k + 1, l + 1, n])
@@ -801,6 +805,8 @@ end
 
 """Return a string representation of an Iposet to be printed to file"""
 function toString(g::Iposet)
+    #g = iHasse(itransitiveclosure(g, false)) #Uli
+    g = iHasse(g) #Uli
     n_vertices = string(nv(g.poset), base=16)
     n_edges = string(ne(g.poset), base=16)
 
@@ -868,8 +874,10 @@ function loadIposets(filename::String)
                 s = Tuple([parse(Int, x, base=16) for x in nums[ne+3]])
                 t = Tuple([parse(Int, x, base=16) for x in nums[ne+4]])
             end
-            push!(res, Iposet(s, t, dg))
-    end
+            #push!(res, Iposet(s, t, dg))
+            push!(res, itransitiveclosure(Iposet(s, t, dg), false))
+            #println(res)
+        end
         return res
     end
 end
