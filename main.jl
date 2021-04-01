@@ -23,9 +23,8 @@ using StatProfilerHTML
 #q = Iposet((1,), (4,), s)
 #println(glue(p, q))
 
-a = gpiPosets(6)
-saveIposets(a, "gpiposets/gpi6.ips")
-
+@time gpPosets(2)
+@time println(length(gpPosets(7)))
 
 #@time gpiPosets(2)
 #@time println(length(gpiPosets(7)))
