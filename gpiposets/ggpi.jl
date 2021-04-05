@@ -1,7 +1,7 @@
 # Generate gp-iposets
 n = 9
 k = 0
-l = 6
+l = 5
 
 using LightGraphs
 
@@ -219,30 +219,6 @@ function loadIposets(filename::String)
     return res
 end
 
-# load iposets and split array by num edges, num intfs, and num points
-function loadIposetsSplit(filename::String, n)
-    # n: max number points in iposets to be loaded, plus 1
-    alliposets = Array{Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}}(undef, (n*(n-1))÷2 + 1, n + 1, n + 1, n)
-    @inbounds for i in eachindex(alliposets)
-        alliposets[i] = []
-    end
-    open(filename, "r") do file
-        for line in eachline(file)
-            ip = iposetFromString(line)
-            np = nv(ip.poset)
-            ipe = ne(ip.poset)
-            kp = length(ip.s)
-            lp = length(ip.t)
-            vprof = Array{Tuple{Int, Int}}(undef, np)
-            @inbounds for v in 1:np
-                vprof[v] = (inHash(ip.poset, v), outHash(ip.poset, v))
-            end
-            push!(alliposets[ipe + 1, kp + 1, lp + 1, np], (ip, vprof))
-        end
-    end
-    return alliposets
-end
-
 function isIsoIposetX(g::Iposet, s::Iposet, a::Tuple{Vararg{Int}})
     for vertex in 1:length(a)
         neighbours_in_g = inneighbors(g.poset, vertex)
@@ -334,6 +310,14 @@ function isIsoIposetX(g::Iposet, g_v_profiles::Array{Tuple{Int, Int}}, s::Iposet
     return false
 end
 
+function inversion(g::Iposet)
+    rposet = SimpleDiGraph(nv(g.poset))
+    for e in edges(g.poset)
+        add_edge!(rposet, dst(e), src(e))
+    end
+    return Iposet(g.t, g.s, rposet)
+end
+
 function gpiPosets(n, k, l, alliposets, filled, locks)
     lock(locks[end, k + 1, l + 1, n])
     if filled[k + 1, l + 1, n]
@@ -346,6 +330,7 @@ function gpiPosets(n, k, l, alliposets, filled, locks)
         return res
     end
     if filled[l + 1, k + 1, n]
+        println("Generating gpi-", n, "-", k, "-", l, " by inversion")
         for ne in 1:size(alliposets, 1)
             nes = length(alliposets[ne, l + 1, k + 1, n])
             iposets = Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}(undef, nes)
@@ -367,12 +352,14 @@ function gpiPosets(n, k, l, alliposets, filled, locks)
         @inbounds for i in 1:length(vc)
             res[i] = vc[i][1]
         end
+        println("Generating gpi-", n, "-", k, "-", l, " by inversion: Done")
         return res
     end
+    println("Generating gpi-", n, "-", k, "-", l, " recursively")
     Threads.@threads for n1 in 1:(n-1)
         Threads.@threads for n2 in 1:(n-1)
             u = n1 + n2 - n
-            if u < 0 || u >= n1 || u >= n2
+            if u < 0 || u > n1 || u > n2 || k > n1 || l > n2
                 continue
             end
             for ip1 in gpiPosets(n1, k, u, alliposets, filled, locks)
@@ -405,6 +392,9 @@ function gpiPosets(n, k, l, alliposets, filled, locks)
             ip2s = k - ip1s
             for ip1t in 0:l
                 ip2t = l - ip1t
+                if n1 < ip1s || n1 < ip1t || n2 < ip2s || n2 < ip2t
+                    continue
+                end
                 for ip1 in gpiPosets(n1, ip1s, ip1t, alliposets, filled, locks)
                     for ip2 in gpiPosets(n2, ip2s, ip2t, alliposets, filled, locks)
                         ip = parallel(ip1, ip2)
@@ -440,32 +430,46 @@ function gpiPosets(n, k, l, alliposets, filled, locks)
     return res
 end
 
-function gpiPosetsMemo8(k, l)
-    n = 8
-    alliposets = loadIposetsSplit("gpiupto7.ips", n)
+function gpiPosetsMemo(n, k, l)
+    infname = string("gpiupto",n-1,".ips")
+    alliposets = Array{Array{Tuple{Iposet, Array{Tuple{Int, Int}}}}}(undef, (n*(n-1))÷2 + 1, n + 1, n + 1, n)
+    @inbounds for i in eachindex(alliposets)
+        alliposets[i] = []
+    end
     filled = zeros(Bool, n + 1, n + 1, n)
-    for np in 1:7
-        for kp in 0:np
-            for lp in 0:np
-                filled[kp + 1, lp + 1, np] = true
+    println("Loading gpi cache")
+    open(infname, "r") do file
+        for line in eachline(file)
+            ip = iposetFromString(line)
+            np = nv(ip.poset)
+            ipe = ne(ip.poset)
+            kp = length(ip.s)
+            lp = length(ip.t)
+            vprof = Array{Tuple{Int, Int}}(undef, np)
+            @inbounds for v in 1:np
+                vprof[v] = (inHash(ip.poset, v), outHash(ip.poset, v))
             end
+            push!(alliposets[ipe + 1, kp + 1, lp + 1, np], (ip, vprof))
+            # if we see one, we see all
+            filled[kp + 1, lp + 1, np] = true
         end
     end
     locks = Array{ReentrantLock}(undef, (n*(n-1))÷2 + 2, n + 1, n + 1, n)
     for i in eachindex(locks)
         locks[i] = ReentrantLock()
     end
+    println("Start generating")
     return gpiPosets(n, k, l, alliposets, filled, locks)
 end
 
-function ggpi8(k, l)
-    fname = string("gpi8-",k,"-",l,".ips")
-    println(fname)
-    ips = gpiPosetsMemo8(k, l)
+function ggpi(n, k, l)
+    outfname = string("gpi",n,"-",k,"-",l,".ips")
+    println("Generating ", outfname)
+    ips = gpiPosetsMemo(n, k, l)
     println("Done: ", length(ips))
-    saveIposets(ips, fname)
+    saveIposets(ips, outfname)
 end
 
-if n == 8
-    ggpi8(k, l)
-end
+#if n > 7 && n < 10
+ggpi(n, k, l)
+#end

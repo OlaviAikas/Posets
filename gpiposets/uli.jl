@@ -418,7 +418,7 @@ end
 # 8-4-6 is wrong?!
 # 8-1-6 is unclear
 n = 8
-k = 1
+k = 4
 l = 6
 
 ggpwi8(k, l)
